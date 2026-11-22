@@ -57,6 +57,6 @@ Rules:
 - A stop closer than 0.75% of price means fees are over a quarter of the risk. `plan` warns. At 40x that is a 30% margin stop.
 - Positions are cross margin: a trade without a stop is backed by the whole account.
 - GDEX allows 10 sign-ins per 15 minutes; the harness reuses one saved session. If "Too many sign-in attempts" appears, wait for the window; do not retry in a loop.
-- A resting take-profit limit is not available through GDEX (a reduce-only limit closes at market). Targets are take-profit triggers.
+- A resting take-profit limit works with `tp --coin X --pct N --maker` (lower fee when it fills). Never use the SDK `hlPlaceOrder` for it: that endpoint closes the position at market.
 - Replays so far (`track.js --backtest-all`, `replay.js`) found no rule with a proven edge after fees. Breakouts the tracker confirms did best. The tools measure; they do not predict. Do not present any read-out as a signal that "works".
 - Stock-linked markets trade around the clock but are thin when US markets are closed.
