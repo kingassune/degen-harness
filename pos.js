@@ -32,7 +32,7 @@ async function hl(body) {
 }
 
 async function snapshot(user) {
-  const dexes = ['', ...(await hl({ type: 'perpDexs' })).filter(Boolean).map((d) => d.name)];
+  const dexes = ['', ...((await hl({ type: 'perpDexs' })) || [{ name: 'xyz' }]).filter(Boolean).map((d) => d.name)];
   const spot = await hl({ type: 'spotClearinghouseState', user });
   const usdc = (spot.balances || []).find((b) => b.coin === 'USDC') || { total: 0, hold: 0 };
   const states = await Promise.all(dexes.map((dex) => hl({ type: 'clearinghouseState', user, dex }).catch(() => null)));
