@@ -323,10 +323,10 @@ async function adjust(cmd, args, wallet) {
     changes.push({ what: 'target', oid: curTp ? curTp.oid : null, resting: !!(curTp && !curTp.isTrigger), maker: !!args.maker, from: curTp ? Number(curTp.isTrigger ? curTp.trigger : curTp.px) : null, to: px, pnlAtTarget: Number(((px - ref) * dir * size).toFixed(2)), marginPct: Number(((px / ref - 1) * dir * lev * 100).toFixed(1)) });
   }
   // --maker on a target: swap the take-profit trigger for a plain resting reduce-only limit at that price
-  // Live test 2026-11-22: GDEX's place_order with reduceOnly did NOT rest at the target price - it closed the position at market.
-  // So a resting take-profit is not available through GDEX today. Refuse rather than close a trade by surprise.
-  if (args.maker) die('--maker is off: through GDEX a reduce-only limit order closes the position at market instead of resting (seen live 2026-11-22)');
-  const swap = null;
+  // --maker on a target: swap the take-profit trigger for a plain resting reduce-only limit at that price (lower fee when it fills).
+  // It goes through create_order with reduceOnly + isMarket false. GDEX's place_order must NOT be used for this: that endpoint
+  // is the site's close button and closes at market whatever price it is given (seen live 2026-11-22).
+  const swap = changes.find((c) => c.what === 'target' && c.maker && !c.resting);
   if (swap && !pos) die('--maker needs an open position: a resting take-profit cannot sit on an order that has not filled');
   const need = changes.filter((c) => c.what !== 'entry' && c.oid == null && c !== swap);
   if (need.length && !pos) die(`the resting order on ${coin} has no attached ${need.map((c) => c.what).join(' / ')} to move - cancel it and place it again with one`);
@@ -336,7 +336,7 @@ async function adjust(cmd, args, wallet) {
   const w = wallet.pk ? wallet : loadWallet(); const results = [];
   if (swap) {
     // place the resting limit first, then remove the trigger, so the position is never without a target order
-    const put = await signedCall(w, (skill, creds) => skill.hlPlaceOrder({ coin, isLong: !isLong, price: String(swap.to), size: String(size), reduceOnly: true, ...creds }));
+    const put = await signedCall(w, (skill, creds) => skill.hlCreateOrder({ coin, isLong: !isLong, price: String(swap.to), size: String(size), reduceOnly: true, isMarket: false, tpPrice: '', slPrice: '', ...creds }));
     results.push({ what: 'target', via: 'resting reduce-only limit', res: put });
     if (put && put.isSuccess !== false && !put.error && swap.oid != null) results.push({ what: 'old target trigger', via: 'cancel', res: await signedCall(w, (skill, creds) => skill.hlCancelOrder({ ...creds, coin, orderId: String(swap.oid) })) });
   }
@@ -376,6 +376,9 @@ async function main() {
       coin: p.coin, isLong: p.isLong, price: String(p.entry), size: String(p.size), reduceOnly: false, isMarket: p.orderType !== 'limit',
       tpPrice: String(roundSig(p.tp)), slPrice: String(roundSig(p.stop)), leverage: p.lev, ...creds,
     }));
+    // Leverage: the order's own leverage field is only honoured on isolated margin, and this account trades cross. So set the
+    // market's leverage first. If the exchange refuses, the trade still has the right SIZE and stop; only the margin held differs.
+    const levSet = await signedCall(wallet, (skill, creds) => skill.hlUpdateLeverage({ coin: p.coin, leverage: p.lev, isCross: true, ...creds }));
     let res = await send();
     // GDEX checks a resting entry against ITS mark price, which can lag the real one. When it refuses a book-joining
     // entry it names that mark: re-plan once, one cushion inside it. A refused order was never placed.
@@ -388,7 +391,9 @@ async function main() {
     if (res && res.isSuccess === false) die(`rejected: ${JSON.stringify(res)}`);
     await new Promise((r) => setTimeout(r, 4000));
     const after = await account(wallet.managed);
-    const out = { ok: true, action: p.orderType === 'limit' ? 'fire-limit' : 'fire', resting: p.orderType === 'limit' ? after.entries.filter((o) => o.coin === p.coin) : undefined, plan: p, positions: after.positions, orders: after.orders, equity: after.equity };
+    const got = after.positions.find((x) => x.coin === p.coin);
+    if (got && got.lev !== p.lev) p.warnings.push(`asked for ${p.lev}x but the exchange holds this at ${got.lev}x. Size, stop and target prices are as planned; percent-of-margin figures on screen will differ.${levSet && levSet.isSuccess === false ? ' Leverage change was refused: ' + String(levSet.error).slice(0, 120) : ''}`);
+    const out = { ok: true, levSet: levSet === undefined ? null : levSet, action: p.orderType === 'limit' ? 'fire-limit' : 'fire', resting: p.orderType === 'limit' ? after.entries.filter((o) => o.coin === p.coin) : undefined, plan: p, positions: after.positions, orders: after.orders, equity: after.equity };
     fs.appendFileSync(JOURNAL, JSON.stringify({ t: new Date().toISOString(), ...out, thesis: args.thesis || '' }) + '\n');
     return out;
   }

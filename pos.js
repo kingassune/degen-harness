@@ -70,7 +70,7 @@ async function snapshot(user) {
     const mine = orders.filter((o) => o.coin === p.coin && o.reduceOnly && o.parentOid == null);
     const leg = (o) => {
       if (!o) return null;
-      const px = Number(o.triggerPx || o.limitPx);
+      const px = Number(o.triggerPx) > 0 ? Number(o.triggerPx) : Number(o.limitPx);
       const pnl = (px - entry) * szi; // dollars if it fills there
       return { px, awayPct: (px / mark - 1) * 100, pnl, marginPct: margin ? pnl / (Math.abs(szi) * entry / lev) * 100 : 0 };
     };
