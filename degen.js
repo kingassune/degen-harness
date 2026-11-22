@@ -324,8 +324,8 @@ async function adjust(cmd, args, wallet) {
   }
   // --maker on a target: swap the take-profit trigger for a plain resting reduce-only limit at that price
   // --maker on a target: swap the take-profit trigger for a plain resting reduce-only limit at that price (lower fee when it fills).
-  // It goes through create_order with reduceOnly + isMarket false. GDEX's place_order must NOT be used for this: that endpoint
-  // is the site's close button and closes at market whatever price it is given (seen live 2026-11-22).
+  // Same call as gdex.pro's limit close: create_order with reduceOnly + isMarket false. place_order is the site's close button
+  // and closes at market whatever price it is given.
   const swap = changes.find((c) => c.what === 'target' && c.maker && !c.resting);
   if (swap && !pos) die('--maker needs an open position: a resting take-profit cannot sit on an order that has not filled');
   const need = changes.filter((c) => c.what !== 'entry' && c.oid == null && c !== swap);
@@ -336,7 +336,7 @@ async function adjust(cmd, args, wallet) {
   const w = wallet.pk ? wallet : loadWallet(); const results = [];
   if (swap) {
     // place the resting limit first, then remove the trigger, so the position is never without a target order
-    const put = await signedCall(w, (skill, creds) => skill.hlCreateOrder({ coin, isLong: !isLong, price: String(swap.to), size: String(size), reduceOnly: true, isMarket: false, tpPrice: '', slPrice: '', ...creds }));
+    const put = await signedCall(w, (skill, creds) => skill.hlCreateOrder({ coin, isLong: !isLong, price: String(swap.to), size: String(size), reduceOnly: true, isMarket: false, tpPrice: '', slPrice: '', leverage: lev, ...creds }));
     results.push({ what: 'target', via: 'resting reduce-only limit', res: put });
     if (put && put.isSuccess !== false && !put.error && swap.oid != null) results.push({ what: 'old target trigger', via: 'cancel', res: await signedCall(w, (skill, creds) => skill.hlCancelOrder({ ...creds, coin, orderId: String(swap.oid) })) });
   }
@@ -347,7 +347,7 @@ async function adjust(cmd, args, wallet) {
   if (need.length) {
     const tp = need.find((c) => c.what === 'target'); const sl = need.find((c) => c.what === 'stop');
     results.push({ what: need.map((c) => c.what).join('+'), via: 'add_position_tpsl', res: await signedCall(w, (skill, creds) => gdexCall(skill, creds, 'hl_add_position_tpsl',
-      ['string', 'string', 'string', 'string', 'string', 'bool', 'string', 'string', 'bool'], [coin, '', tp ? String(tp.to) : '', '', true, sl ? String(sl.to) : '', '', true], '/v1/hl/add_position_tpsl')) });
+      ['string', 'string', 'string', 'string', 'string', 'bool', 'string', 'string', 'bool'], [coin, String(size), tp ? String(tp.to) : '', '', true, sl ? String(sl.to) : '', '', true], '/v1/hl/add_position_tpsl')) });
   }
   await new Promise((r) => setTimeout(r, 2500));
   const after = await account(wallet.managed);
@@ -373,12 +373,11 @@ async function main() {
     if (p.margin > acct.free * 0.98) die(`margin $${p.margin} needed, only $${acct.free} free`);
     if (acct.openRisk + acct.pendingRisk + p.risk > acct.equity * MAX_RISK_PCT / 100) die(`total risk $${(acct.openRisk + acct.pendingRisk + p.risk).toFixed(2)} (open $${acct.openRisk} + resting $${acct.pendingRisk} + this $${p.risk}) would pass ${MAX_RISK_PCT}% of equity $${acct.equity}`);
     const send = () => signedCall(wallet, (skill, creds) => skill.hlCreateOrder({
-      coin: p.coin, isLong: p.isLong, price: String(p.entry), size: String(p.size), reduceOnly: false, isMarket: p.orderType !== 'limit',
+      coin: p.coin, isLong: p.isLong, price: String(p.orderType === 'limit' ? p.entry : p.mark), size: String(p.size), reduceOnly: false, isMarket: p.orderType !== 'limit',
       tpPrice: String(roundSig(p.tp)), slPrice: String(roundSig(p.stop)), leverage: p.lev, ...creds,
     }));
-    // Leverage: the order's own leverage field is only honoured on isolated margin, and this account trades cross. So set the
-    // market's leverage first. If the exchange refuses, the trade still has the right SIZE and stop; only the margin held differs.
-    const levSet = await signedCall(wallet, (skill, creds) => skill.hlUpdateLeverage({ coin: p.coin, leverage: p.lev, isCross: true, ...creds }));
+    // Leverage travels as the `leverage` field on the order, the way gdex.pro sends it. The back-end sets it on the exchange
+    // before placing; if the exchange refuses, it carries on at the old setting, so the fill is checked below.
     let res = await send();
     // GDEX checks a resting entry against ITS mark price, which can lag the real one. When it refuses a book-joining
     // entry it names that mark: re-plan once, one cushion inside it. A refused order was never placed.
@@ -392,8 +391,8 @@ async function main() {
     await new Promise((r) => setTimeout(r, 4000));
     const after = await account(wallet.managed);
     const got = after.positions.find((x) => x.coin === p.coin);
-    if (got && got.lev !== p.lev) p.warnings.push(`asked for ${p.lev}x but the exchange holds this at ${got.lev}x. Size, stop and target prices are as planned; percent-of-margin figures on screen will differ.${levSet && levSet.isSuccess === false ? ' Leverage change was refused: ' + String(levSet.error).slice(0, 120) : ''}`);
-    const out = { ok: true, levSet: levSet === undefined ? null : levSet, action: p.orderType === 'limit' ? 'fire-limit' : 'fire', resting: p.orderType === 'limit' ? after.entries.filter((o) => o.coin === p.coin) : undefined, plan: p, positions: after.positions, orders: after.orders, equity: after.equity };
+    if (got && got.lev !== p.lev) p.warnings.push(`asked for ${p.lev}x but the exchange holds this at ${got.lev}x. Size, stop and target prices are as planned; percent-of-margin figures on screen will differ.`);
+    const out = { ok: true, action: p.orderType === 'limit' ? 'fire-limit' : 'fire', resting: p.orderType === 'limit' ? after.entries.filter((o) => o.coin === p.coin) : undefined, plan: p, positions: after.positions, orders: after.orders, equity: after.equity };
     fs.appendFileSync(JOURNAL, JSON.stringify({ t: new Date().toISOString(), ...out, thesis: args.thesis || '' }) + '\n');
     return out;
   }
@@ -402,10 +401,10 @@ async function main() {
     const todo = acct.positions.filter((p) => !args.coin || p.coin.toLowerCase() === normCoin(args.coin).toLowerCase());
     if (!todo.length) return { ok: true, action: 'flat', closed: [] };
     const closed = [];
-    // close = a reduce-only market order the other way (the SDK's closePerpPosition cannot load on Node 20)
+    // close = place_order, the same call as gdex.pro's close button: reduce-only, the back-end closes the live position at market
     for (const p of todo) {
       const mk = await market(normCoin(p.coin));
-      closed.push({ coin: p.coin, res: await signedCall(wallet, (skill, creds) => skill.hlCreateOrder({ coin: normCoin(p.coin), isLong: p.szi < 0, price: String(p.szi < 0 ? mk.ask : mk.bid), size: String(Math.abs(p.szi)), reduceOnly: true, isMarket: true, tpPrice: '', slPrice: '', ...creds })) });
+      closed.push({ coin: p.coin, res: await signedCall(wallet, (skill, creds) => skill.hlPlaceOrder({ coin: normCoin(p.coin), isLong: p.szi < 0, price: String(mk.mark), size: String(Math.abs(p.szi)), reduceOnly: true, ...creds })) });
     }
     await new Promise((r) => setTimeout(r, 4000));
     const after = await account(wallet.managed);

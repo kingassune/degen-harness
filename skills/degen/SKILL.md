@@ -55,7 +55,9 @@ Rules:
 
 - Fees: 0.0932% of position per side at market (HyperLiquid 0.0432% + GDEX builder 0.05%). A round trip costs 7.5% of margin at 40x, 3.7% at 20x.
 - A stop closer than 0.75% of price means fees are over a quarter of the risk. `plan` warns. At 40x that is a 30% margin stop.
-- Positions are cross margin: a trade without a stop is backed by the whole account.
+- Margin mode is set by the back-end, not by us: main markets (BTC, ETH, SOL...) are CROSS, backed by the whole account. Any `dex:` market (`xyz:NVDA`, `xyz:ANT`...) is ISOLATED: its own margin and its own liquidation price.
+- Leverage rides on the order (`--lev`), as on gdex.pro, whose default is the market's max. If the exchange refuses the change the order still goes at the old setting; `fire` warns when the fill's leverage differs. Size and stop prices are right either way.
+- The harness sends the same calls as gdex.pro: open = create_order (market sends the mark price), stop/target edits = modify_order / add_position_tpsl / cancel_order, close = place_order, limit close = create_order with reduce-only. A limit entry must be below the mark for a long and above it for a short, or GDEX refuses it.
 - GDEX allows 10 sign-ins per 15 minutes; the harness reuses one saved session. If "Too many sign-in attempts" appears, wait for the window; do not retry in a loop.
 - A resting take-profit limit works with `tp --coin X --pct N --maker` (lower fee when it fills). Never use the SDK `hlPlaceOrder` for it: that endpoint closes the position at market.
 - Replays so far (`track.js --backtest-all`, `replay.js`) found no rule with a proven edge after fees. Breakouts the tracker confirms did best. The tools measure; they do not predict. Do not present any read-out as a signal that "works".

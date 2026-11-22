@@ -73,6 +73,24 @@ Files the harness writes and git ignores: `.session.json` (GDEX session, secret)
 - Status line: `"statusLine": { "type": "command", "command": "node /path/to/degen/statusline.js" }` in `settings.json`.
 - To let Claude place orders without a prompt each time, add the permission rule `Bash(node /path/to/degen/degen.js:*)` yourself.
 
+## How the calls line up with gdex.pro
+
+The order engine sends the same back-end calls as the gdex.pro perp page (checked against the front-end and back-end code, 2026-11-20).
+
+| Action | Call | Notes |
+|---|---|---|
+| Open at market | `create_order`, `isMarket` true, price = mark | The back-end adds its own 5% slippage bound. Leverage rides on the order. |
+| Open with a limit | `create_order`, `isMarket` false | Must be below the mark for a long, above for a short, or it is refused. |
+| Stop and target at entry | `tpPrice` / `slPrice` on `create_order` | Both together. Percent is percent of margin: `price x (1 +/- pct / leverage / 100)`. Market triggers. |
+| Move a stop or target | `modify_order` with the new trigger price | |
+| Add a stop or target to a position | `add_position_tpsl` with the full position size | |
+| Remove a target, cancel an entry | `cancel_order` | |
+| Close | `place_order`, reduce-only | The site's close button. It closes at market and ignores the price given. |
+| Resting take-profit | `create_order`, reduce-only, `isMarket` false | The site's limit close. `tp --maker`. |
+
+Margin mode is the back-end's choice: main markets are cross, every `dex:` market is isolated.
+Moving a resting entry's price (`entry --to`) uses `modify_order` too; the site has no button for that.
+
 ## Fees
 
 Measured on live fills: 0.0932% of position per side at market (HyperLiquid 0.0432% + GDEX builder 0.05%).
