@@ -14,6 +14,8 @@
  *   node track.js BTC --tf 5m --png      # also write out/<coin>-track.html
  *   node track.js BTC --backtest         # replay the rules on history, after fees. Add --tf 5m|15m|1h
  *   node track.js --backtest-all         # the same over a basket of markets and timeframes
+ *   node track.js --pairs                # replay on spreads: the ratio of two related markets (--pair ETH BTC for one)
+ *   add --adaptive to any of them        # surprise-driven model switching (arXiv 2610.11242) instead of fixed
  *
  * Nothing here predicts. It measures the current motion with less lag and less noise than eyeballing candles.
  */
@@ -32,6 +34,7 @@ const SECS = { '1m': 60, '5m': 300, '15m': 900, '1h': 3600, '4h': 14400 };
 // Fees measured on this account's own fills (2026-11-22): a market order costs 0.0932% of position per side
 // (HyperLiquid taker 0.0432% + GDEX builder 0.05%). A resting limit order is assumed at 0.065% (maker 0.015% + builder 0.05%).
 const TAKER = Number(process.env.DEGEN_FEE_TAKER || 0.000932); const MAKER = Number(process.env.DEGEN_FEE_MAKER || 0.00065);
+let LEGS = 1; // a pair trades two markets, so every fee is paid twice
 const FEE_RT = 2 * TAKER;
 
 async function hl(body) {
@@ -57,13 +60,15 @@ const MODELS = [
   { name: 'MANEUVER', F: [[1, 1], [0, 1]], qp: 0.90, qv: 0.45 }, // velocity free to change
 ];
 const R_SIG = 0.8;                       // a close is a noisy reading of the "true" track
+const ADAPTIVE = process.argv.includes('--adaptive');
 const STAY = 0.94;                       // chance a model stays the right one from candle to candle
 const TRANS = MODELS.map((_, i) => MODELS.map((__, j) => (i === j ? STAY : (1 - STAY) / (MODELS.length - 1))));
 const mul = (A, B) => [[A[0][0] * B[0][0] + A[0][1] * B[1][0], A[0][0] * B[0][1] + A[0][1] * B[1][1]], [A[1][0] * B[0][0] + A[1][1] * B[1][0], A[1][0] * B[0][1] + A[1][1] * B[1][1]]];
 const tr = (A) => [[A[0][0], A[1][0]], [A[0][1], A[1][1]]];
 
 /** Run the IMM over closes. Returns one record per candle, each using only data up to that candle. */
-function runTrack(c) {
+function runTrack(c, opts = {}) {
+  const adaptive = opts.adaptive != null ? opts.adaptive : ADAPTIVE; let nis = 1;
   const z0 = Math.log(c[0].c);
   let xs = MODELS.map(() => [z0, 0]); let Ps = MODELS.map(() => [[1e-6, 0], [0, 1e-8]]); let mu = [0.6, 0.3, 0.1];
   let s2 = 0; const out = [];
@@ -72,10 +77,13 @@ function runTrack(c) {
   for (let k = 1; k < c.length; k += 1) {
     const z = Math.log(c[k].c); const sig = Math.sqrt(s2); const R = (R_SIG * sig) ** 2;
     // 1. mix: each model starts from a blend of all models' last estimates
-    const cj = MODELS.map((_, j) => MODELS.reduce((a, __, i) => a + TRANS[i][j] * mu[i], 0));
+    // fixed switching by default. Adaptive: a big surprise on the last candle raises the chance that the target is now maneuvering.
+    let TR = TRANS;
+    if (adaptive) { const m = Math.min(0.5, 0.03 + 0.04 * Math.max(0, nis - 1)); TR = [[1 - m - 0.03, 0.03, m], [0.03, 1 - m - 0.03, m], [0.03, 0.03, 0.94]]; }
+    const cj = MODELS.map((_, j) => MODELS.reduce((a, __, i) => a + TR[i][j] * mu[i], 0));
     const x0 = []; const P0 = [];
     for (let j = 0; j < MODELS.length; j += 1) {
-      const w = MODELS.map((_, i) => TRANS[i][j] * mu[i] / cj[j]);
+      const w = MODELS.map((_, i) => TR[i][j] * mu[i] / cj[j]);
       const x = [0, 0]; for (let i = 0; i < MODELS.length; i += 1) { x[0] += w[i] * xs[i][0]; x[1] += w[i] * xs[i][1]; }
       const P = [[0, 0], [0, 0]];
       for (let i = 0; i < MODELS.length; i += 1) { const d0 = xs[i][0] - x[0]; const d1 = xs[i][1] - x[1]; P[0][0] += w[i] * (Ps[i][0][0] + d0 * d0); P[0][1] += w[i] * (Ps[i][0][1] + d0 * d1); P[1][0] += w[i] * (Ps[i][1][0] + d1 * d0); P[1][1] += w[i] * (Ps[i][1][1] + d1 * d1); }
@@ -102,6 +110,7 @@ function runTrack(c) {
     const pTrend = mu[1] + mu[2]; const lock = sdV ? x[1] / sdV : 0;
     const mode = mu[0] >= 0.6 ? 'CHOP' : (pTrend >= 0.6 && Math.abs(lock) >= 1.5) ? (x[1] > 0 ? 'UP' : 'DOWN') : mu[2] >= 0.45 ? 'TURNING' : 'UNCLEAR';
     out.push({ k, t: c[k].t, track: Math.exp(x[0]), logTrack: x[0], vel: x[1], sdV, lock, sig, band: Math.sqrt(predS), surprise: (z - predP) / Math.sqrt(predS), mu: [...mu], mode, sdP: Math.sqrt(Ppp) });
+    nis = ((z - predP) ** 2) / predS;
     const r = Math.log(c[k].c / c[k - 1].c); s2 = 0.97 * s2 + 0.03 * r * r; // sigma adapts after the candle is used
   }
   return out;
@@ -114,15 +123,15 @@ function backtest(c, T) {
   for (let k = 160; k < c.length - 2; k += 1) {
     if (k < busyUntil) continue;
     const r = byK.get(k); const prev = byK.get(k - 1); if (!r || !prev) continue;
-    let entry = c[k + 1].o; let rule = null; let dir = 0; let stop; let target = null; let maxHold; let fee = FEE_RT; let noTargetOnFirst = false;
+    let entry = c[k + 1].o; let rule = null; let dir = 0; let stop; let target = null; let maxHold; let fee = FEE_RT * LEGS; let noTargetOnFirst = false;
     // band-limit: while hovering, rest a buy at the lower band and a sell at the upper band for the next candle (the way chop is
     // actually traded with limit orders). Filled only if the next candle reaches the band. Target = the track, as a limit.
     const lo = r.track * Math.exp(-1.5 * r.band); const hi = r.track * Math.exp(1.5 * r.band); const nx = c[k + 1];
-    if (r.mode === 'CHOP' && nx.o > lo && nx.o < hi && (nx.l <= lo || nx.h >= hi) && (r.track / lo - 1) > 2 * MAKER) {
+    if (r.mode === 'CHOP' && nx.o > lo && nx.o < hi && (nx.l <= lo || nx.h >= hi) && (r.track / lo - 1) > 2 * MAKER * LEGS) {
       rule = 'band-limit'; dir = nx.l <= lo ? 1 : -1; entry = dir > 0 ? lo : hi; target = r.track; stop = entry * Math.exp(-dir * 1.5 * r.band); maxHold = 8; noTargetOnFirst = true;
     } else if (r.mode === 'CHOP' && Math.abs(r.surprise) >= 1.5) { // hovering target jumped: fade it back to the track
       rule = 'chop-fade'; dir = r.surprise > 0 ? -1 : 1; target = r.track; stop = entry * Math.exp(-dir * 1.5 * r.band); maxHold = 8;
-      if ((target - entry) * dir <= entry * FEE_RT) continue; // not enough room to pay the fees
+      if ((target - entry) * dir <= entry * FEE_RT * LEGS) continue; // not enough room to pay the fees
     } else if ((r.mode === 'UP' || r.mode === 'DOWN') && prev.mode !== r.mode && Math.abs(r.lock) >= 2) { // fresh lock on a moving target
       rule = 'trend-ride'; dir = r.mode === 'UP' ? 1 : -1; stop = entry * Math.exp(-dir * 2 * r.band); maxHold = 24;
     } else continue;
@@ -136,7 +145,7 @@ function backtest(c, T) {
     }
     if (exit == null) { j = Math.min(c.length - 1, k + maxHold); exit = c[j].c; why = 'time'; }
     const gross = (exit / entry - 1) * dir;
-    if (rule === 'band-limit') fee = MAKER + (why === 'target' ? MAKER : TAKER);
+    if (rule === 'band-limit') fee = (MAKER + (why === 'target' ? MAKER : TAKER)) * LEGS;
     trades.push({ rule, dir, k, entry, exit, why, gross, net: gross - fee, stopDist: Math.abs(stop / entry - 1), bars: j - k });
     busyUntil = j + 1;
   }
@@ -151,16 +160,22 @@ function stats(tr) {
 }
 const normCoin = (coin) => { const i = coin.indexOf(':'); return i === -1 ? coin.toUpperCase() : coin.slice(0, i).toLowerCase() + ':' + coin.slice(i + 1).toUpperCase(); };
 
+async function pairCandles(a, b, tf, n) {
+  const A = await candles(a, tf, n); const B = new Map((await candles(b, tf, n)).map((x) => [x.t, x]));
+  // only closes are comparable across two markets, so the pair candle's high/low are just its open and close
+  return A.filter((x) => B.has(x.t)).map((x) => { const y = B.get(x.t); const o = x.o / y.o; const cl = x.c / y.c; return { t: x.t, o, c: cl, h: Math.max(o, cl), l: Math.min(o, cl), v: 0 }; });
+}
 async function backtestCmd(list, tfs) {
   const rows = []; const pool = { 'band-limit': [], 'chop-fade': [], 'trend-ride': [] };
   for (const coin of list) for (const tf of tfs) {
-    const c = await candles(coin, tf, 5000); if (c.length < 400) continue;
+    const c = Array.isArray(coin) ? await pairCandles(coin[0], coin[1], tf, 5000) : await candles(coin, tf, 5000); if (c.length < 400) continue;
+    const name = Array.isArray(coin) ? coin.map((x) => x.replace(/^.*:/, '')).join('/') : coin;
     const tr = backtest(c, runTrack(c));
-    for (const rule of Object.keys(pool)) { const sub = tr.filter((t) => t.rule === rule); pool[rule].push(...sub); rows.push({ coin, tf, rule, candles: c.length, days: (c[c.length - 1].t - c[0].t) / 86400e3, ...stats(sub) }); }
+    for (const rule of Object.keys(pool)) { const sub = tr.filter((t) => t.rule === rule); pool[rule].push(...sub); rows.push({ coin: name, tf, rule, candles: c.length, days: (c[c.length - 1].t - c[0].t) / 86400e3, ...stats(sub) }); }
   }
   const total = Object.fromEntries(Object.entries(pool).map(([r, t]) => [r, stats(t)]));
   if (JSON_OUT) { console.log(JSON.stringify({ feeRoundTripPct: FEE_RT * 100, rows, total }, null, 1)); return; }
-  console.log(`\n${C.cyan('TRACKER REPLAY')}  entries at the next candle's open, stop checked before target. Fees: market ${(TAKER * 100).toFixed(3)}% per side, limit ${(MAKER * 100).toFixed(3)}% per side`);
+  console.log(`\n${C.cyan('TRACKER REPLAY')}  entries at the next candle's open, stop checked before target. Fees: market ${(TAKER * 100).toFixed(3)}% per side, limit ${(MAKER * 100).toFixed(3)}% per side${LEGS > 1 ? ', x' + LEGS + ' legs' : ''}${ADAPTIVE ? '   [adaptive switching]' : ''}`);
   console.log(C.dim(`\n${padE('market', 10)} ${pad('tf', 4)} ${padE('rule', 11)} ${pad('days', 5)} ${pad('trades', 6)} ${pad('win', 5)} ${pad('avg gross', 10)} ${pad('avg net', 9)} ${pad('total net', 10)} ${pad('PF', 5)} ${pad('t', 5)} ${pad('avg stop', 9)}`));
   const line = (name, tf, rule, days, s) => { if (!s.n) return `${padE(name, 10)} ${pad(tf, 4)} ${padE(rule, 11)} ${pad(days, 5)} ${pad(0, 6)}`; const cc = s.avgNetPct >= 0 ? C.green : C.red; return `${C.yellow(padE(name, 10))} ${pad(tf, 4)} ${padE(rule, 11)} ${pad(days, 5)} ${pad(s.n, 6)} ${pad(s.winPct.toFixed(0) + '%', 5)} ${pad((s.avgGrossPct >= 0 ? '+' : '') + s.avgGrossPct.toFixed(3) + '%', 10)} ${cc(pad((s.avgNetPct >= 0 ? '+' : '') + s.avgNetPct.toFixed(3) + '%', 9))} ${cc(pad((s.totalNetPct >= 0 ? '+' : '') + s.totalNetPct.toFixed(1) + '%', 10))} ${pad(s.profitFactor.toFixed(2), 5)} ${pad(s.tStat.toFixed(1), 5)} ${pad(s.avgStopPct.toFixed(2) + '%', 9)}`; };
   for (const r of rows) console.log(line(r.coin, r.tf, r.rule, r.days.toFixed(0), r));
@@ -209,5 +224,10 @@ async function one() {
   console.log(C.dim(`\nThe tracker measures motion; it does not predict. Check it against history: node track.js ${u.name} --backtest\n`));
 }
 const BASKET = ['BTC', 'ETH', 'SOL', 'HYPE', 'ZEC', 'xyz:NVDA', 'xyz:SNDK', 'xyz:GOLD'];
-if (require.main === module) (argv.includes('--backtest-all') ? backtestCmd(BASKET, flag('tf', null) ? [flag('tf')] : ['5m', '15m', '1h']) : one()).catch((e) => { console.error(String(e.stack || e)); process.exit(1); });
+const PAIRS = [['ETH', 'BTC'], ['SOL', 'ETH'], ['SOL', 'BTC'], ['xyz:NVDA', 'io:NVDA'], ['xyz:SNDK', 'xyz:MU'], ['xyz:GOLD', 'xyz:SILVER']];
+async function pairCmd() {
+  LEGS = 2; const i = argv.indexOf('--pair'); const named = [argv[i + 1], argv[i + 2]].filter((x) => x && !x.startsWith('--')).map(normCoin);
+  return backtestCmd(named.length === 2 ? [named] : PAIRS, flag('tf', null) ? [flag('tf')] : ['15m', '1h']);
+}
+if (require.main === module) (argv.includes('--pair') || argv.includes('--pairs') ? pairCmd() : argv.includes('--backtest-all') ? backtestCmd(BASKET, flag('tf', null) ? [flag('tf')] : ['5m', '15m', '1h']) : one()).catch((e) => { console.error(String(e.stack || e)); process.exit(1); });
 module.exports = { runTrack, backtest, stats, candles };

@@ -124,3 +124,10 @@ skipped, because below that the fees are over a quarter of the amount risked. R 
 | Rest the entry at the top of the book | GDEX checks the price against its own mark, which lagged the real one (60,699 vs 60,726). The order rested about 0.06% under the market and did not fill in 2 minutes. Now opt-in: `--join`. |
 | Take profit as a resting limit | GDEX's reduce-only `place_order` closed the position at market instead of resting. Disabled. |
 | The builder fee | 0.05% of the 0.0932% per side is the GDEX builder fee. That is the largest lever and it is a company decision. |
+
+## Two tracker variants, replayed and not adopted (2026-11-22)
+
+| Variant | Result against the plain tracker |
+|---|---|
+| Surprise-driven model switching (`--adaptive`, after arXiv 2610.11242) | No better: riding a lock averaged -0.102% per trade after fees against -0.041% with fixed switching. Left off by default. |
+| Tracking the ratio of two related markets (`--pairs`: ETH/BTC, SOL/ETH, SOL/BTC, NVDA across two venues, SNDK/MU, GOLD/SILVER) | Worse: two legs pay fees twice. Band trades averaged -0.414% after fees (490 trades); riding a lock -0.398% (136 trades). |

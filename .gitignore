@@ -1,5 +1,6 @@
 # secrets and per-user state: never commit
 .session.json
+.equity.json
 config.json
 journal.jsonl
 # generated charts and research databases

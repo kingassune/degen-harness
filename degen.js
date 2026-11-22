@@ -17,6 +17,8 @@
  *   The stop and target ride with the resting order and arm when it fills. Percent stops count from the limit price.
  *
  * COMPOUNDING: size from the live account instead of fixed dollars: --margin-pct 20 or --risk-pct 4 (percent of current equity).
+ *   Drawdown brake: those percent sizes shrink as the account falls from its peak and stop at DEGEN_DD_FLOOR (30%).
+ *   node degen.js peak [--reset]   show the peak and the brake, or restart the peak from today's equity
  *
  * FAST ADJUSTS (LIVE; add --dry to preview). They work on an open position or a resting limit order:
  *   node degen.js sl    --coin BTC --pct 10          stop = lose 10% of margin        (--to PX for a price)
@@ -38,7 +40,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const HOME = '/home/assune';
+// Looked for next to this folder unless the environment says otherwise, so the harness is not tied to one machine.
+const HOME = path.join(__dirname, '..');
 const GDEX_DIR = process.env.GDEX_SKILL_DIR || path.join(HOME, 'gdex-skill');
 const WALLET_PATH = process.env.GCLAW_WALLET || path.join(HOME, 'gdex-test-wallet.json');
 const JOURNAL = path.join(__dirname, 'journal.jsonl');
@@ -159,15 +162,30 @@ function finish(out, equity, free) {
   return out;
 }
 
+// Peak equity is remembered in .equity.json (not in git). Deposits raise the peak; after a withdrawal run `degen.js peak --reset`.
+const EQUITY_FILE = path.join(__dirname, '.equity.json'); const DD_FLOOR = Number(process.env.DEGEN_DD_FLOOR || 30);
+function brakeFor(equity, reset = false) {
+  let st = {}; try { st = JSON.parse(fs.readFileSync(EQUITY_FILE, 'utf8')); } catch { /* first run */ }
+  const peak = reset ? equity : Math.max(Number(st.peak || 0), equity);
+  if (!MOCK && (reset || peak !== st.peak)) { try { fs.writeFileSync(EQUITY_FILE, JSON.stringify({ peak, at: new Date().toISOString() })); } catch { /* read-only checkout */ } }
+  const dd = peak > 0 ? (1 - equity / peak) * 100 : 0;
+  return { peak: Number(peak.toFixed(2)), equity, drawdownPct: Number(dd.toFixed(1)), floorPct: DD_FLOOR, scale: Number(Math.max(0, 1 - dd / DD_FLOOR).toFixed(3)) };
+}
+
 async function plan(args) {
   // Stops and targets as PERCENT OF MARGIN (GDEX style): --sl 20 --tp 60. Price levels still work: --stop PX --tp-px PX.
   const usage = 'need --coin --side long|short --sl PCT --tp PCT (percent of margin) and --risk USD or --margin USD [--lev max|half|N]';
   for (const k of ['coin', 'side']) if (args[k] == null) die(usage);
   // compounding: --margin-pct 20 puts up 20% of CURRENT equity, --risk-pct 4 risks 4% of it, so size grows and shrinks with the account
+  let brake = null;
   if (args['margin-pct'] != null || args['risk-pct'] != null) {
     const eq = (await account(readAddress())).equity;
-    if (args['margin-pct'] != null) args.margin = String(Number((eq * Number(args['margin-pct']) / 100).toFixed(2)));
-    else args.risk = String(Number((eq * Number(args['risk-pct']) / 100).toFixed(2)));
+    // DRAWDOWN BRAKE (arXiv 1710.01503): percent sizes shrink in step with how far the account has fallen from its peak,
+    // and reach zero at the floor, so the floor cannot be crossed by sizing alone. Floor = DEGEN_DD_FLOOR % (default 30).
+    brake = brakeFor(eq);
+    if (brake.scale <= 0) die(`drawdown brake: the account is ${brake.drawdownPct}% under its peak $${brake.peak}, at the ${DD_FLOOR}% floor. Percent sizing is off. Use fixed --margin, raise DEGEN_DD_FLOOR, or run: degen.js peak --reset`);
+    if (args['margin-pct'] != null) args.margin = String(Number((eq * Number(args['margin-pct']) / 100 * brake.scale).toFixed(2)));
+    else args.risk = String(Number((eq * Number(args['risk-pct']) / 100 * brake.scale).toFixed(2)));
   }
   if ((args.sl == null && args.stop == null) || (args.tp == null && args['tp-px'] == null) || (args.risk == null && args.margin == null)) die(usage);
   const coin = normCoin(args.coin);
@@ -212,8 +230,9 @@ async function plan(args) {
   // fees against the stop: under 4 round trips of fee, the fee is over a quarter of what you risk
   const feeShare = (limit != null ? 0.00065 + 0.000932 : 0.000932 * 2) / stopDist;
   if (feeShare > 0.25) warnings.push('fees are ' + (feeShare * 100).toFixed(0) + '% of the amount risked: this stop is ' + (stopDist * 100).toFixed(2) + '% away, and under ' + (0.000932 * 2 * 4 * 100).toFixed(2) + '% the fee eats the trade. Lower leverage with the same % stop, or a wider stop.');
+  if (brake && brake.scale < 1) warnings.push(`drawdown brake: account is ${brake.drawdownPct}% under its peak $${brake.peak}, so this size is cut to ${(brake.scale * 100).toFixed(0)}% of the asked percent`);
   return {
-    orderType: limit != null ? 'limit' : 'market', joinBook, limit, mark: m.mark, awayPct: limit != null ? Number(((limit / m.mark - 1) * 100).toFixed(2)) : 0,
+    brake, orderType: limit != null ? 'limit' : 'market', joinBook, limit, mark: m.mark, awayPct: limit != null ? Number(((limit / m.mark - 1) * 100).toFixed(2)) : 0,
     warnings, stopVsAvg15mCandle: avg15 ? Number((stopDist / avg15).toFixed(2)) : null,
     coin, side: isLong ? 'long' : 'short', isLong, lev, maxLev: m.maxLev, entry, stop, tp, size,
     notional: Number(notional.toFixed(2)), margin: Number((notional / lev).toFixed(2)),
@@ -344,9 +363,10 @@ async function main() {
   const args = parseArgs(rest);
   if (cmd === 'plan') return plan(args);
   // reads and --dry previews only need the public address; the wallet file is opened only to sign a live action
-  const readOnly = cmd === 'status' || cmd === 'orders' || args.dry;
+  const readOnly = cmd === 'status' || cmd === 'orders' || cmd === 'peak' || args.dry;
   const wallet = readOnly ? { managed: readAddress() } : loadWallet();
-  if (cmd === 'status') return account(wallet.managed);
+  if (cmd === 'status') { const a = await account(wallet.managed); a.brake = brakeFor(a.equity); return a; }
+  if (cmd === 'peak') { const a = await account(readAddress()); return { ok: true, ...brakeFor(a.equity, !!args.reset) }; }
   if (cmd === 'fire') {
     let p = await plan(args);
     const acct = await account(wallet.managed);
@@ -406,6 +426,6 @@ async function main() {
     return out;
   }
   if (['sl', 'tp', 'move', 'entry'].includes(cmd)) return adjust(cmd, args, wallet);
-  die('commands: status | plan | fire | flat | orders | cancel | entry | sl | tp | move');
+  die('commands: status | plan | fire | flat | orders | cancel | entry | sl | tp | move | peak');
 }
 main().then((o) => { console.log(JSON.stringify(o, null, 1)); process.exit(0); }).catch((e) => die(String(e.stack || e)));

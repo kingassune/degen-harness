@@ -1,0 +1,13 @@
+{
+  "name": "degen-harness",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Terminal trading harness for HyperLiquid perps through GDEX",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "action": "node sectors.js && node scan.js && node mom.js --hunt",
+    "pos": "node pos.js",
+    "stats": "node stats.js",
+    "check": "for f in *.js; do node --check \"$f\" || exit 1; done"
+  }
+}
