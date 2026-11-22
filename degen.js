@@ -58,8 +58,8 @@ async function hl(body) {
     const r = await fetch('https://api.hyperliquid.xyz/info', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
     const j = r && r.ok ? await r.json().catch(() => null) : null;
     if (j != null) return j;
-    if (k >= 4) throw new Error('HyperLiquid did not answer (rate limit) - try again in a few seconds');
-    await new Promise((res) => setTimeout(res, 700 * (k + 1)));
+    if (k >= 7) throw new Error('HyperLiquid did not answer (rate limit) - try again in a few seconds');
+    await new Promise((res) => setTimeout(res, 1000 * (k + 1))); // up to ~28 s in all: a stop move must not die on a busy feed
   }
 }
 function parseArgs(argv) {
@@ -172,6 +172,11 @@ function brakeFor(equity, reset = false) {
   return { peak: Number(peak.toFixed(2)), equity, drawdownPct: Number(dd.toFixed(1)), floorPct: DD_FLOOR, scale: Number(Math.max(0, 1 - dd / DD_FLOOR).toFixed(3)) };
 }
 
+// The re-read after a live action. If the data feed is busy the action has STILL been sent: never report that as a failure.
+async function reread(managed) {
+  try { return await account(managed); } catch (e) { return { positions: [], orders: [], entries: [], equity: null, unread: 'the order was sent, but the account could not be re-read (' + String(e.message || e).slice(0, 80) + '). Check with pos.js before sending it again.' }; }
+}
+
 async function plan(args) {
   // Stops and targets as PERCENT OF MARGIN (GDEX style): --sl 20 --tp 60. Price levels still work: --stop PX --tp-px PX.
   const usage = 'need --coin --side long|short --sl PCT --tp PCT (percent of margin) and --risk USD or --margin USD [--lev max|half|N]';
@@ -249,7 +254,7 @@ async function plan(args) {
   };
 }
 
-// One signed call to a GDEX HL endpoint the SDK does not wrap yet (modify_order, add_position_tpsl).
+// Fallback only: one signed call built by hand, for SDK builds that do not have hlModifyOrder / hlAddPositionTpsl yet.
 async function gdexCall(skill, creds, action, types, valuesAfterNonce, endpoint) {
   const { ethers } = require(path.join(GDEX_DIR, 'node_modules', 'ethers'));
   const SDK = require(path.join(GDEX_DIR, 'dist'));
@@ -290,8 +295,8 @@ async function adjust(cmd, args, wallet) {
     const w = wallet.pk ? wallet : loadWallet();
     const res = await signedCall(w, (skill, creds) => skill.hlCancelOrder({ ...creds, coin, orderId: String(cur.oid) }));
     await new Promise((r) => setTimeout(r, 2500));
-    const after = await account(wallet.managed);
-    const out = { ok: !(res && res.isSuccess === false), action: cmd + '-off', coin, removed: cur, res, ordersNow: after.orders.filter(same) };
+    const after = await reread(wallet.managed);
+    const out = { unread: after.unread, ok: !(res && res.isSuccess === false), action: cmd + '-off', coin, removed: cur, res, ordersNow: after.orders.filter(same) };
     fs.appendFileSync(JOURNAL, JSON.stringify({ t: new Date().toISOString(), ...out }) + '\n');
     return out;
   }
@@ -342,17 +347,21 @@ async function adjust(cmd, args, wallet) {
   }
   for (const c of changes.filter((x) => x.oid != null && x !== swap)) {
     const vals = (c.what === 'entry' || c.resting) ? [coin, String(c.oid), String(c.to), '', ''] : [coin, String(c.oid), '', '', String(c.to)];
-    results.push({ what: c.what, via: 'modify_order', res: await signedCall(w, (skill, creds) => gdexCall(skill, creds, 'hl_modify_order', S6, vals, '/v1/hl/modify_order')) });
+    results.push({ what: c.what, via: 'modify_order', res: await signedCall(w, (skill, creds) => (typeof skill.hlModifyOrder === 'function'
+      ? skill.hlModifyOrder({ coin, orderId: String(c.oid), ...(vals[2] ? { price: vals[2] } : {}), ...(vals[4] ? { triggerPrice: vals[4] } : {}), ...creds })
+      : gdexCall(skill, creds, 'hl_modify_order', S6, vals, '/v1/hl/modify_order'))) });
   }
   if (need.length) {
     const tp = need.find((c) => c.what === 'target'); const sl = need.find((c) => c.what === 'stop');
-    results.push({ what: need.map((c) => c.what).join('+'), via: 'add_position_tpsl', res: await signedCall(w, (skill, creds) => gdexCall(skill, creds, 'hl_add_position_tpsl',
-      ['string', 'string', 'string', 'string', 'string', 'bool', 'string', 'string', 'bool'], [coin, String(size), tp ? String(tp.to) : '', '', true, sl ? String(sl.to) : '', '', true], '/v1/hl/add_position_tpsl')) });
+    results.push({ what: need.map((c) => c.what).join('+'), via: 'add_position_tpsl', res: await signedCall(w, (skill, creds) => (typeof skill.hlAddPositionTpsl === 'function'
+      ? skill.hlAddPositionTpsl({ coin, size: String(size), ...(tp ? { tpTriggerPrice: String(tp.to) } : {}), ...(sl ? { slTriggerPrice: String(sl.to) } : {}), ...creds })
+      : gdexCall(skill, creds, 'hl_add_position_tpsl',
+      ['string', 'string', 'string', 'string', 'string', 'bool', 'string', 'string', 'bool'], [coin, String(size), tp ? String(tp.to) : '', '', true, sl ? String(sl.to) : '', '', true], '/v1/hl/add_position_tpsl'))) });
   }
   await new Promise((r) => setTimeout(r, 2500));
-  const after = await account(wallet.managed);
+  const after = await reread(wallet.managed);
   const failed = results.filter((r) => !r.res || r.res.isSuccess === false || r.res.error);
-  const out = { ok: failed.length === 0, action: cmd, ...base, results, ordersNow: after.orders.filter(same), positions: after.positions.filter(same) };
+  const out = { unread: after.unread, ok: failed.length === 0, action: cmd, ...base, results, ordersNow: after.orders.filter(same), positions: after.positions.filter(same) };
   if (failed.length) out.error = 'NOT all changes went through - check ordersNow, your old stop/target may still be the live one';
   fs.appendFileSync(JOURNAL, JSON.stringify({ t: new Date().toISOString(), ...out }) + '\n');
   return out;
@@ -389,10 +398,10 @@ async function main() {
     }
     if (res && res.isSuccess === false) die(`rejected: ${JSON.stringify(res)}`);
     await new Promise((r) => setTimeout(r, 4000));
-    const after = await account(wallet.managed);
+    const after = await reread(wallet.managed);
     const got = after.positions.find((x) => x.coin === p.coin);
     if (got && got.lev !== p.lev) p.warnings.push(`asked for ${p.lev}x but the exchange holds this at ${got.lev}x. Size, stop and target prices are as planned; percent-of-margin figures on screen will differ.`);
-    const out = { ok: true, action: p.orderType === 'limit' ? 'fire-limit' : 'fire', resting: p.orderType === 'limit' ? after.entries.filter((o) => o.coin === p.coin) : undefined, plan: p, positions: after.positions, orders: after.orders, equity: after.equity };
+    const out = { unread: after.unread, ok: true, action: p.orderType === 'limit' ? 'fire-limit' : 'fire', resting: p.orderType === 'limit' ? after.entries.filter((o) => o.coin === p.coin) : undefined, plan: p, positions: after.positions, orders: after.orders, equity: after.equity };
     fs.appendFileSync(JOURNAL, JSON.stringify({ t: new Date().toISOString(), ...out, thesis: args.thesis || '' }) + '\n');
     return out;
   }
@@ -404,12 +413,14 @@ async function main() {
     // close = place_order, the same call as gdex.pro's close button: reduce-only, the back-end closes the live position at market
     for (const p of todo) {
       const mk = await market(normCoin(p.coin));
-      closed.push({ coin: p.coin, res: await signedCall(wallet, (skill, creds) => skill.hlPlaceOrder({ coin: normCoin(p.coin), isLong: p.szi < 0, price: String(mk.mark), size: String(Math.abs(p.szi)), reduceOnly: true, ...creds })) });
+      closed.push({ coin: p.coin, res: await signedCall(wallet, (skill, creds) => (typeof skill.hlClosePosition === 'function'
+        ? skill.hlClosePosition({ coin: normCoin(p.coin), size: String(Math.abs(p.szi)), price: String(mk.mark), isLong: p.szi < 0, ...creds })
+        : skill.hlPlaceOrder({ coin: normCoin(p.coin), isLong: p.szi < 0, price: String(mk.mark), size: String(Math.abs(p.szi)), reduceOnly: true, ...creds }))) });
     }
     await new Promise((r) => setTimeout(r, 4000));
-    const after = await account(wallet.managed);
+    const after = await reread(wallet.managed);
     const left = after.positions.filter((x) => todo.some((t) => t.coin === x.coin));
-    const out = { ok: left.length === 0, action: 'flat', closed, positions: after.positions, orders: after.orders, equity: after.equity };
+    const out = { unread: after.unread, ok: after.unread ? closed.every((c) => c.res && c.res.isSuccess !== false && !c.res.error) : left.length === 0, action: 'flat', closed, positions: after.positions, orders: after.orders, equity: after.equity };
     if (left.length) out.error = 'STILL OPEN: ' + left.map((x) => x.coin).join(', ') + ' - the close did not go through';
     fs.appendFileSync(JOURNAL, JSON.stringify({ t: new Date().toISOString(), ...out }) + '\n');
     return out;
@@ -424,8 +435,8 @@ async function main() {
     const cancelled = [];
     for (const o of todo) cancelled.push({ oid: o.oid, coin: o.coin, px: o.px, res: await signedCall(wallet, (skill, creds) => skill.hlCancelOrder({ ...creds, coin: normCoin(o.coin), orderId: String(o.oid) })) });
     await new Promise((r) => setTimeout(r, 2500));
-    const after = await account(wallet.managed);
-    const out = { ok: true, action: 'cancel', cancelled, entries: after.entries, positions: after.positions };
+    const after = await reread(wallet.managed);
+    const out = { unread: after.unread, ok: true, action: 'cancel', cancelled, entries: after.entries, positions: after.positions };
     fs.appendFileSync(JOURNAL, JSON.stringify({ t: new Date().toISOString(), ...out }) + '\n');
     return out;
   }
