@@ -1,0 +1,1 @@
+{"id":"int-8d08e70b","kind":"field_change","created_at":"2026-11-22T20:09:45.510210614Z","actor":"assune","issue_id":"degen-irc","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Built and run; results in research/FINDINGS.md"}}

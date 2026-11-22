@@ -1,0 +1,36 @@
+{
+ "goal": "Borrow aerospace/radar target-tracking methods (Kalman, IMM, maneuver detection) to build a price-trajectory indicator that separates chop from trend for intraday leveraged trading, plus compounding/growth sizing",
+ "anchor": "tracking filter",
+ "core_terms": ["tracking", "tracker*", "kalman", "filter*", "target*", "trajector*", "price*", "trading", "market*", "financial", "regime*", "portfolio*", "growth"],
+ "topics": {
+  "maneuvering_targets": {
+   "question": "How do radar and aerospace trackers follow a maneuvering target, and which motion models and multiple-model filters work best?",
+   "terms": ["maneuver*", "manoeuvr*", "interacting multiple model", "IMM", "multiple model*", "constant velocity", "constant acceleration", "Singer", "jerk", "missile*", "radar"],
+   "seeds": [["interacting multiple model filter maneuvering target tracking", "semantic"], ["IMM maneuvering target tracking Kalman", "keyword"], ["adaptive process noise maneuver detection target tracking", "semantic"]]
+  },
+  "maneuver_detection": {
+   "question": "How is the onset of a maneuver or a change in dynamics detected quickly from filter residuals?",
+   "anchor": "change detection",
+   "terms": ["innovation*", "residual*", "change detection", "changepoint*", "change point*", "CUSUM", "fault detection", "chi-square", "onset", "abrupt change*"],
+   "seeds": [["maneuver detection using Kalman filter innovation sequence chi-square test", "semantic"], ["online change point detection CUSUM innovation", "keyword"], ["quickest detection of abrupt change in dynamics state estimation", "semantic"]]
+  },
+  "kalman_in_finance": {
+   "question": "Do Kalman filters or state-space trackers applied to asset prices give usable trend, velocity or mean-reversion signals for trading?",
+   "anchor": "trading",
+   "terms": ["kalman", "state-space", "state space", "particle filter*", "trend filter*", "trend following", "momentum", "mean reversion", "mean-reverting", "pairs trading", "local level", "signal extraction"],
+   "seeds": [["Kalman filter trend estimation asset prices trading strategy", "semantic"], ["Kalman filter trading momentum", "keyword"], ["state space model price trend velocity signal extraction high frequency", "semantic"]]
+  },
+  "chop_vs_trend": {
+   "question": "How can a trader tell in real time whether a market is range-bound (mean reverting) or trending, and is that predictable intraday?",
+   "anchor": "market regime",
+   "terms": ["regime*", "mean reversion", "mean-reverting", "range-bound", "trend*", "Hurst", "Ornstein-Uhlenbeck", "hidden Markov", "regime switching", "sideways", "efficiency ratio", "variance ratio"],
+   "seeds": [["detect trending versus mean reverting regime intraday cryptocurrency", "semantic"], ["hidden Markov regime switching trend mean reversion trading", "keyword"], ["Hurst exponent intraday regime trading strategy", "keyword"]]
+  },
+  "compounding": {
+   "question": "How fast can an account compound under leverage, and what bet size maximises long-run growth without ruin when the edge is uncertain?",
+   "anchor": "growth rate",
+   "terms": ["Kelly", "growth-optimal", "growth optimal", "compounding", "compound growth", "geometric growth", "risk of ruin", "fractional Kelly", "drawdown", "leverage", "volatility drag"],
+   "seeds": [["Kelly criterion uncertain edge fractional Kelly drawdown leverage", "semantic"], ["growth optimal leverage compounding risk of ruin", "keyword"], ["time-average growth rate leverage ergodicity", "semantic"]]
+  }
+ }
+}

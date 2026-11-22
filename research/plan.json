@@ -1,0 +1,40 @@
+{
+  "goal": "Ground a high-leverage, level-based intraday perp trading harness (crypto + stock perps) in research: stops, levels, liquidations, volatility, sizing",
+  "anchor": "trading",
+  "core_terms": ["trading", "trader*", "market*", "price*", "cryptocurrenc*", "bitcoin", "futures", "perpetual*", "portfolio*", "volatility", "leverage*"],
+  "topics": {
+    "stops": {
+      "question": "Where should a stop-loss be placed relative to volatility, and do stop-loss and take-profit rules improve or hurt returns?",
+      "terms": ["stop-loss", "stop loss", "take-profit", "take profit", "trailing stop*", "exit rule*", "drawdown control", "barrier*"],
+      "seeds": [["optimal stop-loss and take-profit placement trading strategy volatility", "semantic"], ["stop-loss rules returns", "keyword"], ["trailing stop optimal exit", "keyword"]]
+    },
+    "levels": {
+      "question": "Do support and resistance levels, volume profile, round numbers or order book liquidity clusters predict where price stalls or reverses?",
+      "terms": ["support and resistance", "resistance level*", "support level*", "volume profile", "round number*", "price clustering", "liquidity cluster*", "order book", "price barrier*", "technical analysis"],
+      "seeds": [["support and resistance levels predictive power price bounce", "semantic"], ["price clustering round numbers", "keyword"], ["volume at price profile liquidity limit order book resistance", "semantic"]]
+    },
+    "liquidations": {
+      "question": "How do liquidation cascades, funding rates and open interest in perpetual futures predict price moves?",
+      "terms": ["liquidation*", "funding rate*", "open interest", "perpetual*", "cascade*", "leverage*", "margin call*", "deleverag*"],
+      "anchor": "perpetual futures",
+      "seeds": [["liquidation cascades leveraged perpetual futures price impact", "semantic"], ["perpetual futures funding rate", "keyword"], ["open interest predicts returns cryptocurrency futures", "semantic"]]
+    },
+    "volatility": {
+      "question": "How can intraday crypto volatility and volatility regimes be forecast, including jumps and time-of-day patterns?",
+      "terms": ["realized volatility", "volatility forecast*", "intraday", "HAR", "jump*", "regime*", "volatility cluster*", "seasonality", "high-frequency"],
+      "anchor": "cryptocurrency volatility",
+      "seeds": [["forecasting intraday realized volatility bitcoin high-frequency", "semantic"], ["HAR realized volatility cryptocurrency", "keyword"], ["intraday seasonality volatility cryptocurrency time of day", "semantic"]]
+    },
+    "sizing": {
+      "question": "How should position size and leverage be chosen to avoid ruin, for example with Kelly sizing or volatility targeting?",
+      "terms": ["Kelly", "position siz*", "risk of ruin", "optimal leverage", "volatility target*", "bet siz*", "drawdown*", "fractional"],
+      "seeds": [["Kelly criterion optimal leverage risk of ruin trading", "semantic"], ["position sizing drawdown leverage", "keyword"], ["volatility targeting leverage", "keyword"]]
+    },
+    "contagion": {
+      "question": "How do equity market selloffs spill over into cryptocurrencies, and how fast?",
+      "terms": ["spillover*", "contagion", "correlation*", "co-movement", "tail dependence", "equit*", "stock market*", "risk-off", "connectedness"],
+      "anchor": "cryptocurrency equity",
+      "seeds": [["cryptocurrency stock market spillover during crash tail dependence", "semantic"], ["bitcoin equity correlation contagion", "keyword"]]
+    }
+  }
+}

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Volume terrain</title>
+<style>
+  html,body{margin:0;background:#060A17;color:#D5D9E1;font:13px/1.45 'Inter',-apple-system,system-ui,sans-serif;font-variant-numeric:tabular-nums}
+  .wrap{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:0;min-height:100vh}
+  @media(max-width:900px){.wrap{grid-template-columns:1fr}}
+  .stage{position:relative;min-height:620px}
+  canvas{display:block;width:100%;height:100%;cursor:grab}
+  h1{font-size:19px;font-weight:800;margin:0;color:#fff} .brand{display:flex;align-items:center;gap:8px;color:#fff;font-weight:800;letter-spacing:.06em;font-size:13px;margin-bottom:8px} .brand svg{height:26px;width:auto} .brand em{font-style:normal;font-weight:500;color:#81899F;letter-spacing:.14em;font-size:11px} h2::before{content:'// '} h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#81899F;margin:16px 0 6px}
+  .hud{position:absolute;left:14px;top:12px;pointer-events:none}
+  .hud small{color:#81899F}
+  .side{padding:14px 16px;border-left:1px solid #192843;background:#0B1122;overflow:auto}
+  table{border-collapse:collapse;width:100%} td,th{padding:2px 4px;text-align:right;white-space:nowrap} th{color:#81899F;font-weight:400} td:first-child,th:first-child{text-align:left}
+  .r{color:#F0494C}.g{color:#49B875}.y{color:#61B8FF}.d{color:#81899F}
+  .bar{height:9px;background:#192843;border-radius:2px;overflow:hidden}.bar i{display:block;height:100%}
+  .hrs{display:grid;grid-template-columns:repeat(24,1fr);gap:1px;align-items:end;height:54px}.hrs i{display:block;background:#61B8FF;border-radius:1px 1px 0 0}
+  .hl{display:grid;grid-template-columns:repeat(24,1fr);gap:1px;color:#81899F;font-size:9px;text-align:center}
+  .key span{display:inline-block;margin-right:10px}
+</style></head><body>
+<div class="wrap">
+  <div class="stage"><canvas id="cv"></canvas>
+    <div class="hud"><div class="brand">/*LOGO*/<span>GEMACH</span><em>// GDEX PERPS / VOLUME TERRAIN</em></div><h1 id="title"></h1><small id="sub"></small><br><small>drag to rotate · scroll to zoom · double-click to reset</small></div>
+  </div>
+  <div class="side">
+    <h2>How to read it</h2>
+    <div class="d">Floor: time runs left to right, price runs front (low) to back (high). Height is the volume traded at that price so far, so walls grow as the market builds them. The right-hand edge is the picture now.</div>
+    <div class="key" style="margin-top:6px"><span><b class="y">— —</b> price now</span><span><b style="color:#fff">——</b> price path</span><br><span><b class="r">——</b> resistance</span><span><b class="g">——</b> support</span></div>
+    <h2>Walls — heavy volume, price stalls here</h2><table id="walls"></table>
+    <h2>Air pockets — thin volume, price moves fast</h2><table id="air"></table>
+    <h2>Volatility by timeframe (avg candle range)</h2><div id="frames"></div>
+    <h2>Volatility by hour (UTC)</h2><div class="hrs" id="hrs"></div><div class="hl" id="hl"></div>
+    <div class="d" id="foot" style="margin-top:14px"></div>
+  </div>
+</div>
+<script>
+const D = /*DATA*/null;
+const fmt = v => v >= 1000 ? v.toFixed(0) : v >= 10 ? v.toFixed(2) : v >= 0.1 ? v.toFixed(4) : v.toPrecision(4);
+const TB = D.vol.length, PB = D.prices.length;
+// height = volume traded at that price SO FAR (running total), so walls grow as the session builds them
+const CUM = []; D.vol.forEach((r, t) => CUM.push(r.map((v, p) => v + (t ? CUM[t-1][p] : 0))));
+const vmax = Math.max(...CUM[TB-1]);
+const H = CUM.map(r => r.map(v => Math.pow(v / vmax, 0.7)));
+const pLo = D.prices[0] - (D.prices[1]-D.prices[0])/2, pHi = D.prices[PB-1] + (D.prices[1]-D.prices[0])/2;
+const py = px => 1 - ((px - pLo) / (pHi - pLo)) * 2;                     // low price near you, high price at the back
+const tx = ti => (ti / (TB - 1)) * 2 - 1;
+const heat = h => { // dark blue -> cyan -> yellow -> red -> white
+  const s = [[0,[10,18,40]],[.18,[18,60,120]],[.4,[30,170,190]],[.62,[240,210,70]],[.82,[255,90,60]],[1,[255,240,230]]];
+  for (let i = 1; i < s.length; i++) if (h <= s[i][0]) { const a = s[i-1], b = s[i], k = (h - a[0]) / (b[0] - a[0]); return a[1].map((c, j) => Math.round(c + (b[1][j] - c) * k)); }
+  return s[s.length-1][1];
+};
+const cv = document.getElementById('cv'), g = cv.getContext('2d');
+let yaw = 0.5, pitch = 0.62, zoom = 1, W = 0, Hh = 0;
+function size(){ const r = cv.parentElement.getBoundingClientRect(), d = window.devicePixelRatio || 1; W = r.width; Hh = Math.max(620, window.innerHeight); cv.style.height = Hh + 'px'; cv.width = W * d; cv.height = Hh * d; g.setTransform(d,0,0,d,0,0); draw(); }
+function proj(x, y, z){ // x time, y price depth, z height
+  const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const X = x * cy - y * sy, Y = x * sy + y * cy;
+  const S = Math.min(W, Hh * 1.25) * 0.33 * zoom, persp = 1 / (1 - Y * 0.1);
+  return [W / 2 + X * S * persp, Hh * 0.56 + (Y * sp - z * 0.55 * cp) * S * persp, Y];
+}
+function line(a, b, col, w, dash){ g.beginPath(); g.setLineDash(dash || []); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.strokeStyle = col; g.lineWidth = w; g.stroke(); g.setLineDash([]); }
+function label(p, t, col, align){ g.fillStyle = col; g.font = '11px Inter,system-ui,sans-serif'; g.textAlign = align || 'left'; g.fillText(t, p[0], p[1]); }
+function draw(){
+  g.clearRect(0, 0, W, Hh);
+  // floor frame + price ticks
+  const corners = [[-1,-1],[1,-1],[1,1],[-1,1]].map(c => proj(c[0], c[1], 0));
+  g.beginPath(); corners.forEach((c, i) => i ? g.lineTo(c[0], c[1]) : g.moveTo(c[0], c[1])); g.closePath(); g.fillStyle = '#0B1122'; g.fill(); g.strokeStyle = '#2E4164'; g.lineWidth = 1; g.stroke();
+  // terrain quads, far to near
+  const quads = [];
+  for (let t = 0; t < TB - 1; t++) for (let p = 0; p < PB - 1; p++) {
+    const x0 = tx(t), x1 = tx(t+1), y0 = py(D.prices[p]), y1 = py(D.prices[p+1]);
+    const a = proj(x0,y0,H[t][p]), b = proj(x1,y0,H[t+1][p]), c = proj(x1,y1,H[t+1][p+1]), d = proj(x0,y1,H[t][p+1]);
+    const h = (H[t][p] + H[t+1][p] + H[t+1][p+1] + H[t][p+1]) / 4;
+    quads.push({ a, b, c, d, h, depth: (a[2] + b[2] + c[2] + d[2]) / 4, slope: H[t+1][p] - H[t][p] + H[t][p+1] - H[t][p] });
+  }
+  quads.sort((m, n) => m.depth - n.depth);
+  for (const q of quads) {
+    const col = heat(q.h), sh = Math.max(.55, Math.min(1.25, 1 + q.slope * 2.2));
+    g.beginPath(); g.moveTo(q.a[0], q.a[1]); g.lineTo(q.b[0], q.b[1]); g.lineTo(q.c[0], q.c[1]); g.lineTo(q.d[0], q.d[1]); g.closePath();
+    g.fillStyle = `rgb(${col.map(v => Math.min(255, Math.round(v * sh))).join(',')})`; g.fill();
+    g.strokeStyle = 'rgba(0,0,0,.28)'; g.lineWidth = .5; g.stroke();
+  }
+  // zones and price-now as lines across time, lifted just above the terrain along their price
+  const ridge = px => { const p = Math.max(0, Math.min(PB - 1, Math.round((px - pLo) / (pHi - pLo) * PB - .5))); return Math.max(...H.map(r => r[p])) + .03; };
+  const across = (px, col, w, dash, text) => { if (px < pLo || px > pHi) return; const p = Math.max(0, Math.min(PB - 1, Math.round((px - pLo) / (pHi - pLo) * PB - .5))); const a = proj(-1, py(px), H[0][p]), b = proj(1.03, py(px), H[TB-1][p]); line(a, b, col, w, dash); label([b[0] + 5, b[1] + 4], text, col); };
+  for (const z of D.zonesAbove) across(z.hi, 'rgba(223,46,46,.9)', 1.3, null, fmt(z.lo) + (z.hi > z.lo ? '-' + fmt(z.hi) : ''));
+  for (const z of D.zonesBelow) across(z.lo, 'rgba(73,184,117,.9)', 1.3, null, fmt(z.lo) + (z.hi > z.lo ? '-' + fmt(z.hi) : ''));
+  across(D.price, '#61B8FF', 1.8, [6, 4], 'now ' + fmt(D.price));
+  // price path walking over the terrain
+  g.beginPath();
+  D.path.forEach((pt, t) => { if (!pt) return; const p = Math.max(0, Math.min(PB - 1, Math.round((pt.close - pLo) / (pHi - pLo) * PB - .5))); const q = proj(tx(t), py(pt.close), H[t][p] + .025); t ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]); });
+  g.strokeStyle = '#000'; g.lineWidth = 4.5; g.stroke(); g.strokeStyle = '#fff'; g.lineWidth = 2; g.stroke();
+  const last = D.path[TB-1], lp = Math.max(0, Math.min(PB - 1, Math.round((last.close - pLo) / (pHi - pLo) * PB - .5))), lq = proj(1, py(last.close), H[TB-1][lp] + .025);
+  g.beginPath(); g.arc(lq[0], lq[1], 5, 0, 7); g.fillStyle = '#61B8FF'; g.fill(); g.strokeStyle = '#000'; g.lineWidth = 1.5; g.stroke();
+  // axes labels
+  for (let k = 0; k <= 4; k++) { const px = pLo + (pHi - pLo) * k / 4, a = proj(-1.03, py(px), 0); label([a[0] - 4, a[1] + 4], fmt(px), '#81899F', 'right'); }
+  for (let k = 0; k <= 4; k++) { const t = D.tStart + (D.tEnd - D.tStart) * k / 4, a = proj(k / 2 - 1, 1.06, 0), dt = new Date(t); label([a[0], a[1] + 14], String(dt.getUTCDate()).padStart(2,'0') + ' ' + String(dt.getUTCHours()).padStart(2,'0') + ':' + String(dt.getUTCMinutes()).padStart(2,'0'), '#81899F', 'center'); }
+  const pa = proj(-1.18, 0, 0); label([pa[0], pa[1]], 'PRICE', '#61B8FF', 'right'); const ta = proj(0, 1.2, 0); label([ta[0], ta[1] + 22], 'TIME (UTC)', '#61B8FF', 'center');
+}
+let drag = null;
+cv.addEventListener('pointerdown', e => { drag = [e.clientX, e.clientY, yaw, pitch]; cv.setPointerCapture(e.pointerId); cv.style.cursor = 'grabbing'; });
+cv.addEventListener('pointermove', e => { if (!drag) return; yaw = drag[2] + (e.clientX - drag[0]) * .008; pitch = Math.max(.12, Math.min(1.45, drag[3] + (e.clientY - drag[1]) * .006)); draw(); });
+cv.addEventListener('pointerup', () => { drag = null; cv.style.cursor = 'grab'; });
+cv.addEventListener('wheel', e => { e.preventDefault(); zoom = Math.max(.5, Math.min(2.6, zoom * (e.deltaY < 0 ? 1.08 : .93))); draw(); }, { passive: false });
+cv.addEventListener('dblclick', () => { yaw = 0.5; pitch = 0.62; zoom = 1; draw(); });
+window.addEventListener('resize', size);
+// side panel
+document.title = D.coin + ' volume terrain';
+document.getElementById('title').textContent = D.coin + '  ' + fmt(D.price);
+document.getElementById('sub').textContent = `last ${D.hours}h · ${D.tf} candles · range ${fmt(D.lo)} – ${fmt(D.hi)} (${D.rangePct.toFixed(1)}%) · $${(D.totalVol/1e6).toFixed(1)}M traded · ${D.made}`;
+const rows = (list, id) => { const vm = Math.max(...list.map(w => w.vol), 1); document.getElementById(id).innerHTML = `<tr><th>price</th><th>away</th><th>stop % ${D.halfLev}x</th><th>${D.maxLev}x</th><th style="width:60px">volume</th></tr>` + [...list].sort((a, b) => b.px - a.px).map(w => `<tr><td class="${w.px > D.price ? 'r' : 'g'}">${fmt(w.px)}</td><td>${w.awayPct >= 0 ? '+' : ''}${w.awayPct.toFixed(2)}%</td><td>${w.slHalf.toFixed(0)}%</td><td>${w.slMax.toFixed(0)}%</td><td><div class="bar"><i style="width:${(w.vol / vm * 100).toFixed(0)}%;background:${id === 'walls' ? '#ff9a3d' : '#61B8FF'}"></i></div></td></tr>`).join('') || '<tr><td class="d">none in this window</td></tr>'; };
+rows(D.walls, 'walls'); rows(D.air, 'air');
+const fm = Math.max(...D.frames.map(f => f.atrPct), .01);
+document.getElementById('frames').innerHTML = '<table>' + D.frames.map(f => `<tr><td>${f.tf}</td><td>${f.atrPct.toFixed(2)}%</td><td style="width:150px"><div class="bar"><i style="width:${(f.atrPct / fm * 100).toFixed(0)}%;background:#61B8FF"></i></div></td></tr>`).join('') + '</table>';
+const hm = Math.max(...D.byHour, .0001);
+document.getElementById('hrs').innerHTML = D.byHour.map(v => `<i style="height:${Math.max(2, v / hm * 100).toFixed(0)}%" title="${v.toFixed(2)}%"></i>`).join('');
+document.getElementById('hl').innerHTML = D.byHour.map((_, h) => `<span>${h % 3 ? '' : h}</span>`).join('');
+document.getElementById('foot').textContent = `"stop %" = percent of margin lost if your stop sits at that price, at ${D.halfLev}x and ${D.maxLev}x. Volume per price is estimated by spreading each candle's volume across its high-low range.`;
+size();
+</script></body></html>

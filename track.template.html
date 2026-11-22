@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:#060A17;color:#D5D9E1;font:14px/1.4 'Inter',-apple-system,system-ui,sans-serif;font-variant-numeric:tabular-nums}
+  .hdr{display:flex;justify-content:space-between;align-items:center;padding:12px 22px 10px;border-bottom:1px solid rgba(161,165,179,.18);color:#81899F;font-size:12px;letter-spacing:.14em;font-weight:500}
+  .brand{display:flex;align-items:center;gap:10px;color:#fff;font-weight:800;letter-spacing:.06em;font-size:15px}
+  .brand svg{height:30px;width:auto;color:#fff}
+  .top{display:flex;align-items:center;gap:18px;padding:14px 22px 4px}
+  .coin{font-size:26px;font-weight:800;color:#fff}
+  .call{font-size:18px;font-weight:800;padding:5px 14px;border-radius:2px;letter-spacing:.04em}
+  .UP{background:#49B875;color:#060A17}.DOWN{background:#DF2E2E;color:#fff}.CHOP{background:#704FF6;color:#fff}.TURNING,.UNCLEAR{background:#192843;color:#fff;border:1px solid #2E4164}
+  .stats{display:flex;gap:34px;padding:8px 22px 10px}
+  .stats div{display:flex;flex-direction:column}.stats small{color:#697083;font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:500}
+  .stats b{font-size:18px;color:#fff}.g{color:#49B875!important}.r{color:#F0494C!important}.b{color:#61B8FF!important}
+  .p{margin:0 16px;background:#0B1122;border:1px solid #192843;border-radius:2px;padding:6px}
+  canvas{width:100%;height:560px;display:block}
+  .foot{padding:8px 22px;color:#81899F;font-size:12.5px}
+</style></head><body>
+<div class="hdr"><span class="brand">/*LOGO*/<span>GEMACH</span></span><span>// GDEX PERPS / TRACKER</span></div>
+<div class="top"><span class="coin" id="coin"></span><span class="call" id="call"></span><span style="color:#81899F" id="sub"></span></div>
+<div class="stats" id="stats"></div>
+<div class="p"><canvas id="cv"></canvas></div>
+<div class="foot">White line = the track (price with noise removed). Shaded band = 1.5 sigma round it, where a hovering price normally turns back. Dotted fan = where the current course points over the next 8 candles. Strip under the candles = the model vote: <span style="color:#704FF6">hover (chop)</span>, <span style="color:#49B875">cruise (trend)</span>, <span style="color:#61B8FF">maneuver (turning)</span>. Bars = velocity. The tracker measures motion; it does not predict.</div>
+<script>
+const D = /*DATA*/null;
+const f = (v) => (v >= 1000 ? v.toFixed(0) : v >= 10 ? v.toFixed(2) : v >= 0.1 ? v.toFixed(4) : v.toPrecision(4));
+const label = { UP: 'LOCKED: MOVING UP', DOWN: 'LOCKED: MOVING DOWN', CHOP: 'HOVERING (CHOP)', TURNING: 'TURNING', UNCLEAR: 'NO LOCK' }[D.mode];
+document.getElementById('coin').textContent = D.coin + '  ' + f(D.price);
+const call = document.getElementById('call'); call.textContent = label; call.className = 'call ' + D.mode;
+document.getElementById('sub').textContent = `for ${D.candlesInMode} candles · ${D.tf} · max ${D.maxLev}x · ${D.made}`;
+const sg = (v, d) => (v >= 0 ? '+' : '') + v.toFixed(d); const cl = (v) => (v >= 0 ? 'g' : 'r');
+document.getElementById('stats').innerHTML = [
+  ['velocity', `<b class="${cl(D.velPctPerHour)}">${sg(D.velPctPerHour, 2)}% / hour</b>`],
+  [`on margin at ${D.maxLev}x`, `<b class="${cl(D.velPctPerHour)}">${sg(D.velMarginPctPerHourAtMax, 0)}% / hour</b>`],
+  ['lock (2+ is solid)', `<b>${D.lock.toFixed(1)}</b>`], ['surprise', `<b class="${Math.abs(D.surprise) >= 2 ? 'b' : ''}">${D.surprise.toFixed(1)} sigma</b>`],
+  ['chop band', `<b><span class="g">${f(D.lower)}</span> – <span class="r">${f(D.upper)}</span></b>`],
+  ['vote', `<b>hover ${(D.prob.hover * 100).toFixed(0)}% · cruise ${(D.prob.cruise * 100).toFixed(0)}% · maneuver ${(D.prob.maneuver * 100).toFixed(0)}%</b>`],
+].map(([a, b]) => `<div><small>${a}</small>${b}</div>`).join('');
+const cv = document.getElementById('cv'); const r = cv.getBoundingClientRect(); const dpr = window.devicePixelRatio || 1;
+cv.width = r.width * dpr; cv.height = r.height * dpr; const g = cv.getContext('2d'); g.scale(dpr, dpr);
+const W = r.width, H = r.height, padR = 70, T0 = 10, voteH = 16, velH = 90, ch = H - voteH - velH - T0 - 26;
+const c = D.c, T = D.T, n = c.length, ahead = D.cone.length, cw = (W - padR) / (n + ahead + 1);
+const up = (k) => T[k].track * Math.exp(1.5 * T[k].band), dn = (k) => T[k].track * Math.exp(-1.5 * T[k].band);
+const hi = Math.max(...c.map((x) => x.h), ...D.cone.map((q) => q.hi), ...T.map((_, k) => up(k))), lo = Math.min(...c.map((x) => x.l), ...D.cone.map((q) => q.lo), ...T.map((_, k) => dn(k)));
+const y = (p) => T0 + (hi - p) / (hi - lo || 1) * ch, X = (k) => k * cw + cw / 2;
+g.font = '11px Inter,system-ui,sans-serif'; g.textBaseline = 'middle';
+for (let k = 0; k <= 6; k++) { const p = lo + (hi - lo) * k / 6; g.strokeStyle = '#152037'; g.beginPath(); g.moveTo(0, y(p)); g.lineTo(W - padR, y(p)); g.stroke(); g.fillStyle = '#81899F'; g.fillText(f(p), W - padR + 6, y(p)); }
+g.beginPath(); T.forEach((_, k) => (k ? g.lineTo(X(k), y(up(k))) : g.moveTo(X(k), y(up(k))))); for (let k = n - 1; k >= 0; k--) g.lineTo(X(k), y(dn(k))); g.closePath(); g.fillStyle = 'rgba(97,184,255,.09)'; g.fill();
+c.forEach((x, k) => { const u = x.c >= x.o, col = u ? '#49B875' : '#DF2E2E'; g.strokeStyle = col; g.lineWidth = 1; g.beginPath(); g.moveTo(X(k), y(x.h)); g.lineTo(X(k), y(x.l)); g.stroke(); g.fillStyle = col; const yt = y(Math.max(x.o, x.c)); g.fillRect(k * cw + cw * .2, yt, cw * .6, Math.max(1.5, y(Math.min(x.o, x.c)) - yt)); });
+g.lineWidth = 2; g.strokeStyle = '#fff'; g.beginPath(); T.forEach((t, k) => (k ? g.lineTo(X(k), y(t.track)) : g.moveTo(X(k), y(t.track)))); g.stroke();
+const lx = X(n - 1), ly = y(T[n - 1].track);
+g.beginPath(); g.moveTo(lx, ly); D.cone.forEach((q) => g.lineTo(X(n - 1 + q.n), y(q.hi))); for (let i = ahead - 1; i >= 0; i--) g.lineTo(X(n - 1 + D.cone[i].n), y(D.cone[i].lo)); g.closePath(); g.fillStyle = 'rgba(255,255,255,.07)'; g.fill();
+g.setLineDash([3, 4]); g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(lx, ly); D.cone.forEach((q) => g.lineTo(X(n - 1 + q.n), y(q.mid))); g.stroke(); g.setLineDash([]);
+const py = y(D.price); g.fillStyle = '#61B8FF'; g.fillRect(W - padR + 2, py - 9, padR - 4, 18); g.fillStyle = '#060A17'; g.fillText(f(D.price), W - padR + 6, py);
+const vy = T0 + ch + 8; T.forEach((t, k) => { let x0 = k * cw, yy = vy; [['#704FF6', t.mu[0]], ['#49B875', t.mu[1]], ['#61B8FF', t.mu[2]]].forEach(([col, p]) => { g.fillStyle = col; g.fillRect(x0, yy, cw + .5, voteH * p); yy += voteH * p; }); });
+const v0 = vy + voteH + 10 + velH / 2, vm = Math.max(...T.map((t) => Math.abs(t.vel) + t.sdV)) || 1e-9;
+g.strokeStyle = '#2E4164'; g.beginPath(); g.moveTo(0, v0); g.lineTo(W - padR, v0); g.stroke();
+T.forEach((t, k) => { const h = t.vel / vm * (velH / 2); const solid = Math.abs(t.vel) >= 1.5 * t.sdV; g.globalAlpha = solid ? 1 : .35; g.fillStyle = t.vel >= 0 ? '#49B875' : '#DF2E2E'; g.fillRect(k * cw + cw * .2, h >= 0 ? v0 - h : v0, cw * .6, Math.abs(h)); }); g.globalAlpha = 1;
+g.fillStyle = '#81899F'; g.fillText('velocity', W - padR + 6, v0); g.fillText('vote', W - padR + 6, vy + voteH / 2);
+</script></body></html>

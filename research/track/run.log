@@ -1,0 +1,49 @@
+[maneuvering_targets] semantic  9/10 new-relevant  'interacting multiple model filter maneuvering target tracking'  <- seed
+[maneuvering_targets] keyword   6/10 new-relevant  'IMM maneuvering target tracking Kalman'  <- seed
+[maneuvering_targets] semantic  1/10 new-relevant  'adaptive process noise maneuver detection target tracking'  <- seed
+[maneuvering_targets] keyword   6/10 new-relevant  'tracking maneuvering'  <- mined phrase 'tracking maneuvering' separates relevant hits (score 7.5)
+[maneuvering_targets] keyword   5/10 new-relevant  'maneuvering targets'  <- mined phrase 'maneuvering targets' separates relevant hits (score 6.5)
+[maneuvering_targets] keyword   1/10 new-relevant  'maneuvering target tracking'  <- mined phrase 'maneuvering target tracking' separates relevant hits (score 6.5)
+[maneuvering_targets] keyword   0/10 new-relevant  'tracking maneuvering targets'  <- mined phrase 'tracking maneuvering targets' separates relevant hits (score 6.0)
+[maneuvering_targets] keyword   1/10 new-relevant  'multi-target tracking'  <- mined phrase 'multi-target tracking' separates relevant hits (score 5.5)
+[maneuvering_targets] keyword   5/10 new-relevant  'maneuver* tracking filter data association'  <- semantic went generic (yield 10%); pin with jargon
+[maneuvering_targets] stop: budget; 34 relevant papers; drift words: multi-target, algorithm, optimal, sensor, targets, network
+[maneuver_detection] semantic  4/10 new-relevant  'maneuver detection using Kalman filter innovation sequence chi-square '  <- seed
+[maneuver_detection] keyword   1/10 new-relevant  'online change point detection CUSUM innovation'  <- seed
+[maneuver_detection] semantic  1/10 new-relevant  'quickest detection of abrupt change in dynamics state estimation'  <- seed
+[maneuver_detection] semantic  1/10 new-relevant  'How is the onset of a maneuver or a change in dynamics detected quickl'  <- keyword drifted (yield 10%); ask semantic for the concept
+[maneuver_detection] keyword   1/10 new-relevant  'innovation* change detection imm filter'  <- semantic went generic (yield 10%); pin with jargon
+[maneuver_detection] keyword   4/10 new-relevant  'innovation* change detection measurement noise'  <- semantic went generic (yield 10%); pin with jargon
+[maneuver_detection] keyword   0/10 new-relevant  'multiple model imm change detection'  <- mined phrase 'multiple model imm' separates relevant hits (score 3.5)
+[maneuver_detection] keyword   2/10 new-relevant  'noise covariance matrices change detection'  <- mined phrase 'noise covariance matrices' separates relevant hits (score 3.5)
+[maneuver_detection] keyword   1/10 new-relevant  'interacting multiple change detection'  <- mined phrase 'interacting multiple' separates relevant hits (score 3.0)
+[maneuver_detection] stop: budget; 15 relevant papers; drift words: multiple, data, problem, changes, propose, algorithm
+[kalman_in_finance] semantic  8/10 new-relevant  'Kalman filter trend estimation asset prices trading strategy'  <- seed
+[kalman_in_finance] keyword   8/10 new-relevant  'Kalman filter trading momentum'  <- seed
+[kalman_in_finance] semantic  3/10 new-relevant  'state space model price trend velocity signal extraction high frequenc'  <- seed
+[kalman_in_finance] keyword  10/10 new-relevant  'kalman filtering'  <- mined phrase 'kalman filtering' separates relevant hits (score 5.5)
+[kalman_in_finance] keyword   1/10 new-relevant  'gaussian noise trading'  <- mined phrase 'gaussian noise' separates relevant hits (score 4.0)
+[kalman_in_finance] semantic  7/10 new-relevant  'Do Kalman filters or state-space trackers applied to asset prices give'  <- keyword drifted (yield 10%); ask semantic for the concept
+[kalman_in_finance] keyword  10/10 new-relevant  'extended kalman'  <- mined phrase 'extended kalman' separates relevant hits (score 4.5)
+[kalman_in_finance] keyword   9/10 new-relevant  'filter ekf'  <- mined phrase 'filter ekf' separates relevant hits (score 5.5)
+[kalman_in_finance] keyword   7/10 new-relevant  'unscented kalman'  <- mined phrase 'unscented kalman' separates relevant hits (score 6.5)
+[kalman_in_finance] stop: budget; 63 relevant papers; drift words: noise, gaussian, time, stock, distributions, series
+[chop_vs_trend] semantic  1/10 new-relevant  'detect trending versus mean reverting regime intraday cryptocurrency'  <- seed
+[chop_vs_trend] keyword   9/10 new-relevant  'hidden Markov regime switching trend mean reversion trading'  <- seed
+[chop_vs_trend] keyword   2/10 new-relevant  'Hurst exponent intraday regime trading strategy'  <- seed
+[chop_vs_trend] keyword   7/10 new-relevant  'regime* market regime mean reversion mean-reverting'  <- semantic went generic (yield 10%); pin with jargon
+[chop_vs_trend] semantic  3/10 new-relevant  'How can a trader tell in real time whether a market is range-bound (me'  <- keyword drifted (yield 20%); ask semantic for the concept
+[chop_vs_trend] keyword   9/10 new-relevant  'markov chain market regime'  <- mined phrase 'markov chain' separates relevant hits (score 4.5)
+[chop_vs_trend] keyword   5/10 new-relevant  'brownian motion market regime'  <- mined phrase 'brownian motion' separates relevant hits (score 7.0)
+[chop_vs_trend] keyword   2/10 new-relevant  'geometric brownian market regime'  <- mined phrase 'geometric brownian' separates relevant hits (score 5.5)
+[chop_vs_trend] keyword   0/10 new-relevant  'geometric brownian motion market regime'  <- mined phrase 'geometric brownian motion' separates relevant hits (score 5.5)
+[chop_vs_trend] stop: budget; 38 relevant papers; drift words: intraday, data, cryptocurrency, dynamics, time, cryptocurrencies
+[compounding] semantic  5/10 new-relevant  'Kelly criterion uncertain edge fractional Kelly drawdown leverage'  <- seed
+[compounding] keyword   0/10 new-relevant  'growth optimal leverage compounding risk of ruin'  <- seed
+[compounding] semantic  7/10 new-relevant  'time-average growth rate leverage ergodicity'  <- seed
+[compounding] semantic  5/10 new-relevant  'How fast can an account compound under leverage, and what bet size max'  <- keyword drifted (yield 0%); ask semantic for the concept
+[compounding] keyword   0/10 new-relevant  'time horizon growth rate'  <- mined phrase 'time horizon' separates relevant hits (score 4.0)
+[compounding] keyword   0/10 new-relevant  'maximizing the expected growth rate'  <- mined phrase 'maximizing the expected' separates relevant hits (score 3.5)
+[compounding] stop: saturated; 17 relevant papers; drift words: process, problem, time, control, maximizing, find
+live API calls this run: 42
+wrote LITERATURE.md and corpus.jsonl
