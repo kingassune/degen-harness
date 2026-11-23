@@ -33,7 +33,8 @@ Stops and targets are PERCENT OF MARGIN, the way gdex.pro shows them. Style: hal
 degen.js plan  --coin X --side long|short --sl 20 --tp 60 --margin 40 --lev half|max|N     # numbers only, nothing sent
 degen.js fire  ...same...                         # market entry, stop and target attached
 degen.js fire  ... --limit PX                     # resting limit entry, stop and target attached
-degen.js fire  ... --margin-pct 20                # size from the live account (compounding); drawdown brake applies
+degen.js fire  ... (no size flag)                 # DEFAULT: 80% of the live account as margin - the user's standing size
+degen.js fire  ... --margin-pct 20                # any other share of the live account
 degen.js sl    --coin X --be | --lock 30 | --pct 10 | --to PX
 degen.js tp    --coin X --pct 150 | --to PX | --off
 degen.js move  --coin X --lock 30 --tp-pct 200    # stop and target together
@@ -52,6 +53,8 @@ Rules:
 6. In chat, terminal colours do not show: use 🟢 🔴 🟡 and plain tables. Lead with the call, then the numbers.
 
 ## Facts that change decisions
+
+- Size: the user's standing size is at least 80% of the account as margin at half or max leverage; leave the size flag off unless they name one. There are no size caps (set 2026-11-23 by the user). At 80% of the account a 20%-of-margin stop loses about 16% of the account plus fees; say that number in the pre-fire line, do not argue it.
 
 - Fees: 0.0932% of position per side at market (HyperLiquid 0.0432% + GDEX builder 0.05%). A round trip costs 7.5% of margin at 40x, 3.7% at 20x.
 - A stop closer than 0.75% of price means fees are over a quarter of the risk. `plan` warns. At 40x that is a 30% margin stop.

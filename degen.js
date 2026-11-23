@@ -17,7 +17,7 @@
  *   The stop and target ride with the resting order and arm when it fills. Percent stops count from the limit price.
  *
  * COMPOUNDING: size from the live account instead of fixed dollars: --margin-pct 20 or --risk-pct 4 (percent of current equity).
- *   Drawdown brake: those percent sizes shrink as the account falls from its peak and stop at DEGEN_DD_FLOOR (30%).
+ *   Drawdown brake: those percent sizes shrink as the account falls from its peak and stop at DEGEN_DD_FLOOR, when that is set (off by default).
  *   node degen.js peak [--reset]   show the peak and the brake, or restart the peak from today's equity
  *
  * FAST ADJUSTS (LIVE; add --dry to preview). They work on an open position or a resting limit order:
@@ -31,7 +31,8 @@
  *   node degen.js orders                             everything resting, with order ids
  *   node degen.js cancel --coin BTC | --oid N --coin BTC | --all     cancel resting ENTRY orders (never a position's stop)
  *
- * Hard rails (env to change): DEGEN_MAX_RISK_USD=30 per trade, DEGEN_MAX_RISK_PCT=25 of equity
+ * Size: no size flag = 80% of the live account as margin (DEGEN_DEFAULT_MARGIN_PCT). No size caps by default.
+ * Optional rails (off unless set): DEGEN_MAX_RISK_USD per trade, DEGEN_MAX_RISK_PCT of equity, DEGEN_DD_FLOOR drawdown brake
  * across open risk, stop must sit inside 70% of the distance to liquidation.
  * Env: GDEX_SKILL_DIR, GCLAW_WALLET (same as gdesk's hl_perp.js). Journal: ./journal.jsonl
  */
@@ -45,8 +46,8 @@ const HOME = path.join(__dirname, '..');
 const GDEX_DIR = process.env.GDEX_SKILL_DIR || path.join(HOME, 'gdex-skill');
 const WALLET_PATH = process.env.GCLAW_WALLET || path.join(HOME, 'gdex-test-wallet.json');
 const JOURNAL = path.join(__dirname, 'journal.jsonl');
-const MAX_RISK_USD = Number(process.env.DEGEN_MAX_RISK_USD || 30);
-const MAX_RISK_PCT = Number(process.env.DEGEN_MAX_RISK_PCT || 25);
+const MAX_RISK_USD = Number(process.env.DEGEN_MAX_RISK_USD || 0)   // 0 = no cap (default since 2026-11-23, the owner's call);
+const MAX_RISK_PCT = Number(process.env.DEGEN_MAX_RISK_PCT || 0)   // 0 = no cap;
 const MIN_NOTIONAL = 11;
 
 const die = (m) => { console.log(JSON.stringify({ ok: false, error: m })); process.exit(1); };
@@ -163,13 +164,14 @@ function finish(out, equity, free) {
 }
 
 // Peak equity is remembered in .equity.json (not in git). Deposits raise the peak; after a withdrawal run `degen.js peak --reset`.
-const EQUITY_FILE = path.join(__dirname, '.equity.json'); const DD_FLOOR = Number(process.env.DEGEN_DD_FLOOR || 30);
+const EQUITY_FILE = path.join(__dirname, '.equity.json'); const DD_FLOOR = Number(process.env.DEGEN_DD_FLOOR || 0);   // 0 = brake off (default)
+const DEFAULT_MARGIN_PCT = Number(process.env.DEGEN_DEFAULT_MARGIN_PCT || 80);
 function brakeFor(equity, reset = false) {
   let st = {}; try { st = JSON.parse(fs.readFileSync(EQUITY_FILE, 'utf8')); } catch { /* first run */ }
   const peak = reset ? equity : Math.max(Number(st.peak || 0), equity);
   if (!MOCK && (reset || peak !== st.peak)) { try { fs.writeFileSync(EQUITY_FILE, JSON.stringify({ peak, at: new Date().toISOString() })); } catch { /* read-only checkout */ } }
   const dd = peak > 0 ? (1 - equity / peak) * 100 : 0;
-  return { peak: Number(peak.toFixed(2)), equity, drawdownPct: Number(dd.toFixed(1)), floorPct: DD_FLOOR, scale: Number(Math.max(0, 1 - dd / DD_FLOOR).toFixed(3)) };
+  return { peak: Number(peak.toFixed(2)), equity, drawdownPct: Number(dd.toFixed(1)), floorPct: DD_FLOOR, scale: DD_FLOOR > 0 ? Number(Math.max(0, 1 - dd / DD_FLOOR).toFixed(3)) : 1 };
 }
 
 // The re-read after a live action. If the data feed is busy the action has STILL been sent: never report that as a failure.
@@ -183,6 +185,8 @@ async function plan(args) {
   for (const k of ['coin', 'side']) if (args[k] == null) die(usage);
   // compounding: --margin-pct 20 puts up 20% of CURRENT equity, --risk-pct 4 risks 4% of it, so size grows and shrinks with the account
   let brake = null;
+  // No size given: put up DEGEN_DEFAULT_MARGIN_PCT (80%) of the live account.
+  if (args.margin == null && args.risk == null && args['margin-pct'] == null && args['risk-pct'] == null) args['margin-pct'] = String(DEFAULT_MARGIN_PCT);
   if (args['margin-pct'] != null || args['risk-pct'] != null) {
     const eq = (await account(readAddress())).equity;
     // DRAWDOWN BRAKE (arXiv 1710.01503): percent sizes shrink in step with how far the account has fallen from its peak,
@@ -216,7 +220,7 @@ async function plan(args) {
   // --margin 50 --sl 20 means: put up $50, lose 20% of it ($10) at the stop
   const risk = args.risk != null ? Number(args.risk) : Number(args.margin) * levReq * Math.abs(entry - stop) / entry;
   if (isLong ? !(stop < entry && tp > entry) : !(stop > entry && tp < entry)) die(`levels wrong side of entry ${entry}: stop ${stop} tp ${tp}`);
-  if (risk > MAX_RISK_USD) die(`risk $${risk} over the $${MAX_RISK_USD} per-trade rail (DEGEN_MAX_RISK_USD)`);
+  if (MAX_RISK_USD > 0 && risk > MAX_RISK_USD) die(`risk $${risk} over the $${MAX_RISK_USD} per-trade rail (DEGEN_MAX_RISK_USD)`);
   const lev = levReq;
   const stopDist = Math.abs(entry - stop) / entry;
   const size = Number((risk / Math.abs(entry - stop)).toFixed(m.dp));
@@ -317,7 +321,7 @@ async function adjust(cmd, args, wallet) {
     const px = roundSig(wantSl.to != null ? Number(wantSl.to) : wantSl.be ? ref * (1 + dir * 0.0012) : wantSl.lock != null ? ref * (1 + dir * Number(wantSl.lock) / lev / 100) : ref * (1 - dir * Number(wantSl.pct) / lev / 100));
     if (isLong ? px >= live : px <= live) die(`stop ${px} is on the wrong side of ${pos ? 'the mark' : 'the limit'} ${live} for a ${isLong ? 'long' : 'short'} - it would trigger at once`);
     const loss = Math.max(0, (ref - px) * dir * size);
-    if (loss > MAX_RISK_USD) die(`stop ${px} would risk $${loss.toFixed(2)}, over the $${MAX_RISK_USD} per-trade rail (DEGEN_MAX_RISK_USD)`);
+    if (MAX_RISK_USD > 0 && loss > MAX_RISK_USD) die(`stop ${px} would risk $${loss.toFixed(2)}, over the $${MAX_RISK_USD} per-trade rail (DEGEN_MAX_RISK_USD)`);
     if (pos && pos.liq && (isLong ? px <= pos.liq : px >= pos.liq)) die(`stop ${px} is past liquidation ${pos.liq} - it would never trigger`);
     if (curSl && (Number(curSl.trigger) - px) * dir > 0) warnings.push('this LOOSENS the stop: more can be lost than before');
     changes.push({ what: 'stop', oid: curSl ? curSl.oid : null, from: curSl ? Number(curSl.trigger) : null, to: px, pnlAtStop: Number(((px - ref) * dir * size).toFixed(2)), marginPct: Number(((px / ref - 1) * dir * lev * 100).toFixed(1)) });
@@ -380,7 +384,7 @@ async function main() {
     let p = await plan(args);
     const acct = await account(wallet.managed);
     if (p.margin > acct.free * 0.98) die(`margin $${p.margin} needed, only $${acct.free} free`);
-    if (acct.openRisk + acct.pendingRisk + p.risk > acct.equity * MAX_RISK_PCT / 100) die(`total risk $${(acct.openRisk + acct.pendingRisk + p.risk).toFixed(2)} (open $${acct.openRisk} + resting $${acct.pendingRisk} + this $${p.risk}) would pass ${MAX_RISK_PCT}% of equity $${acct.equity}`);
+    if (MAX_RISK_PCT > 0 && acct.openRisk + acct.pendingRisk + p.risk > acct.equity * MAX_RISK_PCT / 100) die(`total risk $${(acct.openRisk + acct.pendingRisk + p.risk).toFixed(2)} (open $${acct.openRisk} + resting $${acct.pendingRisk} + this $${p.risk}) would pass ${MAX_RISK_PCT}% of equity $${acct.equity}`);
     const send = () => signedCall(wallet, (skill, creds) => skill.hlCreateOrder({
       coin: p.coin, isLong: p.isLong, price: String(p.orderType === 'limit' ? p.entry : p.mark), size: String(p.size), reduceOnly: false, isMarket: p.orderType !== 'limit',
       tpPrice: String(roundSig(p.tp)), slPrice: String(roundSig(p.stop)), leverage: p.lev, ...creds,

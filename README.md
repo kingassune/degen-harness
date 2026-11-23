@@ -38,21 +38,24 @@ Stops and targets are percent of margin, the way gdex.pro shows them.
 node degen.js plan  --coin BTC --side long --sl 20 --tp 60 --margin 40 --lev half     # numbers only
 node degen.js fire  --coin BTC --side long --sl 20 --tp 60 --margin 40 --lev half     # LIVE, market entry
 node degen.js fire  ... --limit 60200                                                  # LIVE, resting limit entry
-node degen.js fire  ... --margin-pct 20                                                # size from the live account
+node degen.js fire  --coin BTC --side long --sl 20 --tp 60 --lev max                   # LIVE, no size given = 80% of the account
+node degen.js fire  ... --margin-pct 20                                                # any other share of the live account
 node degen.js sl    --coin BTC --be            # stop to breakeven        (--lock 30, --pct 10, --to PX)
 node degen.js tp    --coin BTC --pct 150       # extend the target        (--to PX, --off)
 node degen.js move  --coin BTC --lock 30 --tp-pct 200
 node degen.js flat  --coin BTC
 ```
 
-Rails (change with environment variables):
+Size: with no size flag, `fire` puts up 80% of the live account as margin (`DEGEN_DEFAULT_MARGIN_PCT`). `--margin`, `--risk`,
+`--margin-pct` and `--risk-pct` set any other size. There are no size caps by default.
 
 | Rail | Default | Variable |
 |---|---|---|
-| Dollars risked per trade | $30 | `DEGEN_MAX_RISK_USD` |
-| Open plus resting risk, % of equity | 25% | `DEGEN_MAX_RISK_PCT` |
-| Drawdown floor for percent sizing | 30% under the peak | `DEGEN_DD_FLOOR` |
+| Every entry carries a stop and a target | on | fixed |
 | Stop must sit inside the distance to liquidation | 70% | fixed |
+| Dollars risked per trade | off | `DEGEN_MAX_RISK_USD` |
+| Open plus resting risk, % of equity | off | `DEGEN_MAX_RISK_PCT` |
+| Drawdown brake for percent sizing | off | `DEGEN_DD_FLOOR` |
 
 ## Setup
 
