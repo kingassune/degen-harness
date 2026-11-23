@@ -54,6 +54,8 @@ Rules:
 
 ## Facts that change decisions
 
+- Stops and targets come from ZONES, not fixed percents (user, 2026-11-23): the stop goes beyond the zone that would prove the trade wrong, wide enough to survive the swing, so it may be 20% or 30% of margin or more. Run `levels.js X`, propose the zone-based stop and target as prices, and send them with `--stop PX --tp-px PX`. Report what that is in % of margin; never shrink the stop to hit a round percent, and do not suggest mechanical rules. The user's read decides the trade; the tools serve it.
+
 - Size: the user's standing size is at least 80% of the account as margin at half or max leverage; leave the size flag off unless they name one. There are no size caps (set 2026-11-23 by the user). At 80% of the account a 20%-of-margin stop loses about 16% of the account plus fees; say that number in the pre-fire line, do not argue it.
 
 - Fees: 0.0932% of position per side at market (HyperLiquid 0.0432% + GDEX builder 0.05%). A round trip costs 7.5% of margin at 40x, 3.7% at 20x.
