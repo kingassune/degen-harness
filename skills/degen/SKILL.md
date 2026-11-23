@@ -58,8 +58,8 @@ Rules:
 
 - Size: the user's standing size is at least 80% of the account as margin at half or max leverage; leave the size flag off unless they name one. There are no size caps (set 2026-11-23 by the user). At 80% of the account a 20%-of-margin stop loses about 16% of the account plus fees; say that number in the pre-fire line, do not argue it.
 
-- Fees: 0.0932% of position per side at market (HyperLiquid 0.0432% + GDEX builder 0.05%). A round trip costs 7.5% of margin at 40x, 3.7% at 20x.
-- A stop closer than 0.75% of price means fees are over a quarter of the risk. `plan` warns. At 40x that is a 30% margin stop.
+- Fees per side, share of position: GDEX builder fee is 0.05% on every perp market (never say GDEX charges more). HyperLiquid adds its own: 0.0432% on main markets (total 0.0932%), 0.0086% measured on `xyz:` stock markets (total 0.0586%). Always quote the fee as a percent of position and in dollars, and say which part is GDEX; do not quote it as a percent of margin without saying leverage multiplies it.
+- When the stop is so close that round-trip fees pass a quarter of the risk, `plan` warns (about 0.75% of price on main markets, 0.47% on `xyz:` markets).
 - Margin mode is set by the back-end, not by us: main markets (BTC, ETH, SOL...) are CROSS, backed by the whole account. Any `dex:` market (`xyz:NVDA`, `xyz:ANT`...) is ISOLATED: its own margin and its own liquidation price.
 - Leverage rides on the order (`--lev`), as on gdex.pro, whose default is the market's max. If the exchange refuses the change the order still goes at the old setting; `fire` warns when the fill's leverage differs. Size and stop prices are right either way.
 - The harness sends the same calls as gdex.pro: open = create_order (market sends the mark price), stop/target edits = modify_order / add_position_tpsl / cancel_order, close = place_order, limit close = create_order with reduce-only. A limit entry must be below the mark for a long and above it for a short, or GDEX refuses it.

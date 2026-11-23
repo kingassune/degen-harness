@@ -200,6 +200,13 @@ async function plan(args) {
   const coin = normCoin(args.coin);
   const isLong = String(args.side).toLowerCase() === 'long';
   const m = await market(coin);
+  // FEES per side, as a share of position size. GDEX's builder fee is 0.05% on every perp market (back-end hlSwapFeeBips = 50,
+  // and exactly 0.05% on every fill of this account; DefiLlama's gdex-perps figure is that same fee). The rest is HyperLiquid's own
+  // fee, which depends on the market: 0.0432% taker on main markets, 0.0086% measured on xyz:NVDA (builder-venue markets).
+  // Resting-limit (maker) rates are HyperLiquid's listed rate, not measured here.
+  const GDEX_FEE = 0.0005; const isDexMkt = coin.includes(':');
+  const HL_TAKER = isDexMkt ? 0.000086 : 0.000432; const HL_MAKER = isDexMkt ? 0.00003 : 0.00015;
+  const TK = GDEX_FEE + HL_TAKER; const MK = GDEX_FEE + HL_MAKER;
   // Entry: market by default. --limit PX rests at your price. --join rests just inside the current price to try for the lower
   // resting-order fee. Live test 2026-11-22: GDEX checks the price against its own mark, which lagged the real one by ~0.05%,
   // so a --join order sits that far from the market and often does not fill.
@@ -237,8 +244,8 @@ async function plan(args) {
   if (joinBook) warnings.push('entry rests at ' + limit + ' (just ' + (isLong ? 'under' : 'over') + ' the price)' + ' to pay the lower fee. If price runs away it will NOT fill: add --market to go in now.');
   else if (limit != null) warnings.push('limit entry: nothing is open until price reaches ' + limit + ' (' + (Math.abs(limit / m.mark - 1) * 100).toFixed(2) + '% from here). It rests until filled or cancelled.');
   // fees against the stop: under 4 round trips of fee, the fee is over a quarter of what you risk
-  const feeShare = (limit != null ? 0.00065 + 0.000932 : 0.000932 * 2) / stopDist;
-  if (feeShare > 0.25) warnings.push('fees are ' + (feeShare * 100).toFixed(0) + '% of the amount risked: this stop is ' + (stopDist * 100).toFixed(2) + '% away, and under ' + (0.000932 * 2 * 4 * 100).toFixed(2) + '% the fee eats the trade. Lower leverage with the same % stop, or a wider stop.');
+  const feeShare = (limit != null ? MK + TK : TK * 2) / stopDist;
+  if (feeShare > 0.25) warnings.push('fees are ' + (feeShare * 100).toFixed(0) + '% of the amount risked: this stop is ' + (stopDist * 100).toFixed(2) + '% away, and under ' + (TK * 2 * 4 * 100).toFixed(2) + '% the fee eats the trade. Lower leverage with the same % stop, or a wider stop.');
   if (brake && brake.scale < 1) warnings.push(`drawdown brake: account is ${brake.drawdownPct}% under its peak $${brake.peak}, so this size is cut to ${(brake.scale * 100).toFixed(0)}% of the asked percent`);
   return {
     brake, orderType: limit != null ? 'limit' : 'market', joinBook, limit, mark: m.mark, awayPct: limit != null ? Number(((limit / m.mark - 1) * 100).toFixed(2)) : 0,
@@ -248,13 +255,14 @@ async function plan(args) {
     stopPct: Number((stopDist * 100).toFixed(2)), slPctOfMargin: Number((stopDist * lev * 100).toFixed(1)), tpPctOfMargin: Number((Math.abs(tp - entry) / entry * lev * 100).toFixed(1)), liqPct: Number((liqDist * 100).toFixed(2)),
     risk: Number((size * Math.abs(entry - stop)).toFixed(2)), reward: Number((size * Math.abs(tp - entry)).toFixed(2)),
     rr: Number((Math.abs(tp - entry) / Math.abs(entry - stop)).toFixed(2)),
-    // fees measured on this account: 0.0932% per side at market, about 0.065% for a resting limit
-    feeEst: Number((notional * (limit != null ? 0.00065 + 0.000932 : 0.000932 * 2)).toFixed(2)),
-    feePctOfMargin: Number(((limit != null ? 0.00065 + 0.000932 : 0.000932 * 2) * lev * 100).toFixed(1)),
-    netIfTarget: Number((size * Math.abs(tp - entry) - notional * (limit != null ? 0.00065 * 2 : 0.000932 + 0.00065)).toFixed(2)),
-    netIfStopped: Number((-size * Math.abs(entry - stop) - notional * (limit != null ? 0.00065 + 0.000932 : 0.000932 * 2)).toFixed(2)),
+    // fees: see TK / MK above
+    feePerSidePct: { gdex: 0.05, exchange: Number((HL_TAKER * 100).toFixed(4)), total: Number((TK * 100).toFixed(4)) },
+    feeEst: Number((notional * (limit != null ? MK + TK : TK * 2)).toFixed(2)),
+    feePctOfMargin: Number(((limit != null ? MK + TK : TK * 2) * lev * 100).toFixed(1)),
+    netIfTarget: Number((size * Math.abs(tp - entry) - notional * (limit != null ? MK * 2 : TK + MK)).toFixed(2)),
+    netIfStopped: Number((-size * Math.abs(entry - stop) - notional * (limit != null ? MK + TK : TK * 2)).toFixed(2)),
     // share of trades that must hit the target just to break even after fees, with this stop and target
-    breakevenWinPct: (() => { const fw = notional * (limit != null ? 0.00065 * 2 : 0.000932 + 0.00065); const fl = notional * (limit != null ? 0.00065 + 0.000932 : 0.000932 * 2); const w = size * Math.abs(tp - entry) - fw; const l = size * Math.abs(entry - stop) + fl; return w > 0 ? Number((l / (l + w) * 100).toFixed(0)) : 100; })(), fundingAprPct: Number((m.funding * 876000).toFixed(1)),
+    breakevenWinPct: (() => { const fw = notional * (limit != null ? MK * 2 : TK + MK); const fl = notional * (limit != null ? MK + TK : TK * 2); const w = size * Math.abs(tp - entry) - fw; const l = size * Math.abs(entry - stop) + fl; return w > 0 ? Number((l / (l + w) * 100).toFixed(0)) : 100; })(), fundingAprPct: Number((m.funding * 876000).toFixed(1)),
   };
 }
 

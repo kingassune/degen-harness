@@ -96,8 +96,15 @@ Moving a resting entry's price (`entry --to`) uses `modify_order` too; the site 
 
 ## Fees
 
-Measured on live fills: 0.0932% of position per side at market (HyperLiquid 0.0432% + GDEX builder 0.05%).
-A round trip costs 7.5% of margin at 40x and 3.7% at 20x. `plan` shows the fee as a percent of margin and the win rate needed to break even.
+Per side, as a share of position size, measured on live fills:
+
+| Market | GDEX builder fee | HyperLiquid's own fee | Total |
+|---|---|---|---|
+| Main markets (BTC, ETH, SOL...) | 0.05% | 0.0432% | 0.0932% |
+| Builder-venue markets (`xyz:NVDA`...) | 0.05% | 0.0086% (measured on `xyz:NVDA`) | 0.0586% |
+
+GDEX's fee is 0.05% on every perp market. Leverage does not change the fee; it only makes the same fee a bigger share of the
+margin put up. `plan` shows the split, the fee in dollars, and the win rate needed to break even.
 
 ## Research
 
