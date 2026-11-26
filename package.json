@@ -4,7 +4,7 @@
   "private": true,
   "description": "Trade HyperLiquid perps through GDEX by talking to Claude Code: scanner, sectors, momentum, levels, 3-D volume terrain, tracker, and a fast order engine",
   "license": "MIT",
-  "repository": { "type": "git", "url": "git+https://github.com/kingassune/degen-harness.git" },
+  "repository": { "type": "git", "url": "git+https://github.com/GemachDAO/degen-harness.git" },
   "engines": { "node": ">=20" },
   "scripts": {
     "setup": "node setup.js",

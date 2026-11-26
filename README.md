@@ -52,7 +52,7 @@ It is plain Node scripts. Every tool also works by hand in a terminal, with no A
 You need [Node.js](https://nodejs.org) 20 or newer and git. macOS, Linux, or Windows with WSL.
 
 ```bash
-git clone https://github.com/kingassune/degen-harness.git
+git clone https://github.com/GemachDAO/degen-harness.git
 cd degen-harness
 npm install          # the GDEX SDK (about a minute)
 node setup.js        # creates your wallet and shows your deposit address

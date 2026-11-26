@@ -27,7 +27,7 @@ Start here: `node setup.js check`. It tests the install and shows where your mon
 
 ## Getting help
 
-Open an issue at <https://github.com/kingassune/degen-harness/issues> with the command you ran and its output.
+Open an issue at <https://github.com/GemachDAO/degen-harness/issues> with the command you ran and its output.
 
 **Never paste your wallet file, `.session.json`, or a private key into an issue or a chat.** Nobody needs them to help you. Your
 public trading address is safe to share.

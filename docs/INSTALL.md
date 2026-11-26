@@ -15,7 +15,7 @@ and follow the Linux steps inside it.
 ## 2. Install
 
 ```bash
-git clone https://github.com/kingassune/degen-harness.git
+git clone https://github.com/GemachDAO/degen-harness.git
 cd degen-harness
 npm install
 ```
