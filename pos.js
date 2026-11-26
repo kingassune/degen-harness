@@ -85,9 +85,10 @@ async function snapshot(user) {
   const since = Date.now() - 86400000;
   const fills = (await hl({ type: 'userFillsByTime', user, startTime: since })) || [];
   const realized = fills.reduce((a, f) => a + Number(f.closedPnl || 0) - Number(f.fee || 0), 0);
-  const free = Number(usdc.total) - Number(usdc.hold);
+  const spotFree = Number(usdc.total) - Number(usdc.hold);
+  const free = spotFree + Number((states[0] && states[0].withdrawable) || 0); // a new, standard account keeps free money in the perp account, not in spot
   return {
-    t: new Date().toISOString(), equity: free + perpValue, free, inTrades: out.reduce((a, p) => a + p.margin, 0),
+    t: new Date().toISOString(), equity: spotFree + perpValue, free, inTrades: out.reduce((a, p) => a + p.margin, 0),
     upnl: out.reduce((a, p) => a + p.upnl, 0), realized24h: realized, trades24h: fills.filter((f) => /Close/.test(f.dir)).length,
     atRisk: out.reduce((a, p) => a + (p.stop ? Math.max(0, -p.stop.pnl) : p.margin), 0), positions: out, resting,
   };

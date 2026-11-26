@@ -46,6 +46,7 @@ Check it loaded: type `/degen` in Claude Code, or just say "am I set up".
 | "how am I doing this week" | `stats.js --days 7` |
 | "am I set up", "where's my money" | `setup.js check` |
 | "deposit 50", "take 50 out" | `setup.js deposit` / `withdraw` |
+| "enable stock markets" | `setup.js enable` (one time on a new account) |
 
 Before any order, Claude tells you: margin, leverage, dollars lost if the stop is hit and what share of the account that is, the
 fee in dollars, and any warning from `plan`. If you did not give a size, that is 80% of the account. Say the size you want.

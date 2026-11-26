@@ -20,9 +20,10 @@ Run `setup.js check` when the user is new, when a tool says there is no wallet o
 | "am I set up", "where's my money" | `setup.js check` |
 | "how do I fund it" | `setup.js` (prints the address and steps again; changes nothing) |
 | "move my deposit in", "deposit 50" | `setup.js deposit --amount 50` — USDC from the deposit address on Arbitrum into HyperLiquid, about 10 minutes |
+| "enable stocks", or an `xyz:` order refused with "Insufficient margin" on a funded account | `setup.js enable` — one time, free; switches a new account to unified mode so stock, index and commodity markets work |
 | "take 50 out" | `setup.js withdraw --amount 50` (HyperLiquid to the deposit address, $1 exchange fee), then `setup.js send --to 0x... --amount N` |
 
-Funding facts: the user sends **USDC on Arbitrum One** to the deposit address, at least $11. The smallest deposit is $10 and the
+Funding facts: the user sends **USDC on Arbitrum One** to the deposit address, at least $11, plus about $1 of ETH on Arbitrum for the deposit's gas. The smallest deposit is $10 and the
 deposit address must hold the amount plus 1%. If a money move reports an error, run `setup.js check` and compare balances before
 any retry: a move can go through after an error. Before `send`, read the destination address back to the user and get a yes.
 Tell the user to back up the key file (`~/.degen/wallet.json`). Never open, print or paste it.

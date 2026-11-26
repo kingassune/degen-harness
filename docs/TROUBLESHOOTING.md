@@ -12,6 +12,8 @@ Start here: `node setup.js check`. It tests the install and shows where your mon
 | `position of $X is below the $11 HyperLiquid minimum` | Margin times leverage is too small | More margin or more leverage |
 | `Could not finish: HyperLiquid did not answer` | The public API rate-limits bursts | Wait 10 seconds, run it again. Do not loop |
 | `Too many sign-in attempts` | GDEX allows 10 sign-ins per 15 minutes | Wait 15 minutes. The harness normally reuses one saved session |
+| `Insufficient margin to place order` on an `xyz:` market, with money in the account | A new account has stock and index markets switched off | `node setup.js enable`, once |
+| `the deposit address has no ETH on Arbitrum` | The deposit pays a tiny gas fee from that address | Send about $1 of ETH on Arbitrum to it |
 | A stop is refused as too close to liquidation | The stop is past 70% of the way to liquidation | Lower `--lev`, or a tighter stop |
 | A limit entry is refused | A long limit must be below the price, a short limit above it | Change the price, or enter at market |
 | `Playwright not found` | Chart images are optional and not installed | `npm run charts`, or use `--no-png` |

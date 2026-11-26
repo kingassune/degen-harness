@@ -63,7 +63,7 @@ Send USDC to the deposit address `setup.js` printed (it is also the "Trading add
 - Token: **USDC** (native USDC, contract `0xaf88d065e77c8cC2239327C5EDb3A432268e5831`)
 - Network: **Arbitrum One**
 - Amount: **at least $11**. The smallest deposit into the exchange is $10 and the deposit address must hold the amount plus 1%.
-- Also send about **$1 of ETH on Arbitrum** to the same address, in case the deposit needs gas.
+- Also send about **$1 of ETH on Arbitrum** to the same address. The deposit pays its gas from it. One deposit cost about 0.000001 ETH in testing, so $1 lasts a long time.
 
 From an exchange: withdraw USDC, paste the address, and pick **Arbitrum One** as the network. From a wallet: switch to the Arbitrum
 network and send USDC.
@@ -84,6 +84,17 @@ node setup.js deposit --amount 50          # do it
 It takes about 10 minutes to show up. Run `node setup.js check` until "HyperLiquid account" shows the money.
 
 <p align="center"><img src="img/check.png" alt="setup.js check with a funded account" width="80%"></p>
+
+### One time: switch on stock markets
+
+```bash
+node setup.js enable
+```
+
+A new HyperLiquid account can trade crypto markets straight away, but orders on stock, index and commodity markets (`xyz:NVDA`,
+`xyz:SP500`...) are refused with "Insufficient margin" until the account is switched to HyperLiquid's unified mode. This does
+that. It is free, takes a few seconds, and is the same thing as the "Enable trading" button on gdex.pro. Run it after your
+first deposit shows. `node setup.js check` tells you whether it is on.
 
 > [!CAUTION]
 > If a deposit, withdrawal or send reports an error, **do not run it again straight away.** A money move can go through even when

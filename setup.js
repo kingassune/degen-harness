@@ -8,6 +8,7 @@
  *   node setup.js withdraw --amount 50  move USDC from HyperLiquid back to your deposit address (Arbitrum)  (LIVE)
  *   node setup.js send --to 0x... --amount 50    send USDC from your deposit address to any Arbitrum address (LIVE)
  *
+ *   node setup.js enable                switch on stock, index and commodity markets (once, after your first deposit lands)   (LIVE, free)
  *   node setup.js claude                install the /degen skill for Claude Code (so you can drive it by talking from any folder)
  *
  * Add --dry to deposit / withdraw / send to see what would happen without sending anything.
@@ -60,10 +61,11 @@ function fundingHelp(managed, b) {
   say('\n       ' + managed + '\n');
   say('     At least $11 (the smallest deposit is $10 plus a 1% buffer). Any exchange or wallet that can withdraw');
   say('     "USDC - Arbitrum One" works. Do not send on another network: it will not arrive.');
-  say('     Add about $1 of ETH on Arbitrum too, in case the move needs gas.');
+  say('     Also send about $1 of ETH on Arbitrum to the same address: the deposit pays its gas (a fraction of a cent) from it.');
   say('  2. When it lands:   node setup.js check');
   say('  3. Move it in:      node setup.js deposit --amount 50      (about 10 minutes to show up)');
-  say('  4. Trade:           node degen.js status');
+  say('  4. Once it shows:   node setup.js enable                   (one time: opens stock, index and commodity markets)');
+  say('  5. Trade:           node degen.js status');
   if (b) say(`\n  Now: deposit address ${usd(b.arbUsdc)} USDC on Arbitrum, HyperLiquid account ${usd(b.hl)}.`);
 }
 
@@ -122,6 +124,9 @@ async function check() {
     say('\n  MONEY');
     say(`    Deposit address (Arbitrum):  ${usd(b.arbUsdc)} USDC${b.arbEth == null ? '' : `, ${b.arbEth.toFixed(5)} ETH for gas`}`);
     say(`    HyperLiquid account:         ${usd(b.hl)}   <- what the harness trades with`);
+    const mode = await hl({ type: 'userAbstraction', user: addr });
+    const unified = mode === 'unifiedAccount' || mode === 'portfolioMargin';
+    if (b.hl != null && b.hl >= 1) say(`    Stock / index markets:       ${mode == null ? 'could not read' : unified ? 'on' : 'OFF - run once: node setup.js enable   (crypto markets work without it)'}`);
     if (b.hl != null && b.hl < 11) { if (b.arbUsdc != null && b.arbUsdc >= 10.1) say(`\n  Next: node setup.js deposit --amount ${Math.floor(b.arbUsdc / 1.01)}`); else fundingHelp(addr, null); }
     else if (b.hl != null) say('\n  Funded. Next: node degen.js status   or tell Claude "show me the action".');
   }
@@ -149,6 +154,22 @@ function claude() {
   say('    Leave degen.js and setup.js off that list unless you want orders placed without a prompt.\n');
 }
 
+// New HyperLiquid accounts keep perp money apart from the builder venues (xyz: stocks, indices, commodities), so orders there are
+// refused with "Insufficient margin". This switches the account to HyperLiquid's unified mode, as gdex.pro's "Enable trading" does.
+async function enable() {
+  const w = readWallet(); if (!w || !w.managed) fail('no wallet yet - run: node setup.js');
+  const mode = await hl({ type: 'userAbstraction', user: w.managed });
+  if (mode === 'unifiedAccount' || mode === 'portfolioMargin') { say('\n  ✓ Already on. Stock, index and commodity markets are open to this account.\n'); return; }
+  if (args.dry) { say('\n  Would switch the account to unified mode (free, one time). (dry run: nothing was sent)\n'); return; }
+  const { signedCall, loadWallet } = require('./degen.js');
+  const res = await signedCall(loadWallet(), (skill, creds) => skill.hlEnableTrading({ ...creds }));
+  await new Promise((r) => setTimeout(r, 3000));
+  const after = await hl({ type: 'userAbstraction', user: w.managed });
+  if (after === 'unifiedAccount') { say('\n  ✓ Done. Stock, index and commodity markets (xyz:NVDA, xyz:SP500 ...) are open to this account.\n'); return; }
+  say('\n  ✗ Not switched on. GDEX answered: ' + String((res && (res.error || res.message)) || JSON.stringify(res)).slice(0, 300));
+  say('    This needs money in the HyperLiquid account first. Run "node setup.js check", and try again once your deposit shows.\n'); process.exit(1);
+}
+
 async function money(cmd) {
   const amt = Number(args.amount); if (!(amt > 0)) fail(`${cmd} needs --amount N (in USDC)`);
   const w = readWallet(); if (!w || !w.managed) fail('no wallet yet - run: node setup.js');
@@ -156,6 +177,7 @@ async function money(cmd) {
   if (cmd === 'deposit') {
     if (amt < 10) fail('the smallest deposit is 10 USDC');
     if (b.arbUsdc == null) fail('could not read the Arbitrum balance - try again in a moment');
+    if (b.arbEth === 0) fail('the deposit address has no ETH on Arbitrum. The deposit pays its gas from that address: send about $1 of ETH on Arbitrum to it first.');
     if (b.arbUsdc < amt * 1.01) fail(`the deposit address holds ${usd(b.arbUsdc)} USDC on Arbitrum; a ${amt} deposit needs ${(amt * 1.01).toFixed(2)} (1% buffer). Most you can move now: ${Math.max(0, Math.floor(b.arbUsdc / 1.01))}.`);
     say(`\n  Deposit ${amt} USDC: Arbitrum deposit address -> HyperLiquid account. Takes about 10 minutes.`);
   } else if (cmd === 'withdraw') {
@@ -177,7 +199,7 @@ async function money(cmd) {
   });
   const ok = res && res.isSuccess !== false && !res.error;
   try { fs.appendFileSync(path.join(__dirname, 'journal.jsonl'), JSON.stringify({ t: new Date().toISOString(), ok, action: cmd, amount: amt, to: args.to, res }) + '\n'); } catch { /* journal is best effort */ }
-  if (ok) say(`  ✓ Sent. ${cmd === 'deposit' ? 'It shows up on HyperLiquid in about 10 minutes.' : 'Give it a few minutes.'} Then: node setup.js check\n`);
+  if (ok) say(`  ✓ Sent. ${cmd === 'deposit' ? 'It shows up on HyperLiquid in about 10 minutes. First deposit? When it shows, run once: node setup.js enable' : 'Give it a few minutes.'} Then: node setup.js check\n`);
   else { say('  ✗ GDEX answered with an error: ' + String((res && (res.error || res.message)) || JSON.stringify(res)).slice(0, 300)); say('    A money move can still have gone through after an error. Run "node setup.js check" in a few minutes and compare the balances BEFORE trying again.\n'); process.exit(1); }
 }
 
@@ -186,6 +208,7 @@ async function money(cmd) {
   if (cmd === 'init') return init();
   if (cmd === 'check') return check();
   if (cmd === 'claude') return claude();
+  if (cmd === 'enable') return enable();
   if (['deposit', 'withdraw', 'send'].includes(cmd)) return money(cmd);
-  say('commands: (none) | check | claude | deposit --amount N | withdraw --amount N | send --to 0x.. --amount N   [--dry]');
+  say('commands: (none) | check | enable | claude | deposit --amount N | withdraw --amount N | send --to 0x.. --amount N   [--dry]');
 })().catch((e) => fail(String(e.message || e)));

@@ -77,10 +77,11 @@ Trading money is **USDC**. You send it once to your deposit address, then move i
 
 | Step | What you do | How long |
 |---|---|---|
-| 1 | Send **USDC on the Arbitrum One network** to the deposit address `setup.js` printed. At least $11. Add about $1 of ETH on Arbitrum in case the move needs gas. | 1 to 5 minutes |
+| 1 | Send **USDC on the Arbitrum One network** to the deposit address `setup.js` printed. At least $11. Send about $1 of **ETH on Arbitrum** to the same address too: the deposit pays its gas from it (a fraction of a cent). | 1 to 5 minutes |
 | 2 | `node setup.js check` to see that it landed | instant |
 | 3 | `node setup.js deposit --amount 50` moves it into your HyperLiquid account | about 10 minutes |
-| 4 | `node setup.js check` again. When "HyperLiquid account" shows your money, you can trade. | |
+| 4 | `node setup.js check` again. When "HyperLiquid account" shows your money, you can trade crypto markets. | |
+| 5 | `node setup.js enable`, once. It opens stock, index and commodity markets (`xyz:NVDA`, `xyz:SP500`...) to a new account. Free. | seconds |
 
 <p align="center"><img src="docs/img/check.png" alt="setup.js check: everything installed and the account funded" width="80%"></p>
 

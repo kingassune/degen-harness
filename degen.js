@@ -137,14 +137,16 @@ async function account(managed) {
   for (const dex of ['', 'xyz']) {
     const s = await hl({ type: 'clearinghouseState', user: managed, dex });
     perp += Number(s.marginSummary.accountValue);
+    if (dex === '') out.perpFree = Number(s.withdrawable || 0);
     for (const p of s.assetPositions) out.positions.push({ coin: p.position.coin, szi: Number(p.position.szi), entry: Number(p.position.entryPx), upnl: Number(p.position.unrealizedPnl), liq: Number(p.position.liquidationPx), lev: p.position.leverage.value, margin: Number(p.position.marginUsed) });
     const oo = await hl({ type: 'frontendOpenOrders', user: managed, dex });
     const push = (o, parent) => { out.orders.push({ oid: o.oid, coin: o.coin, side: o.side, sz: o.sz, type: o.orderType, isTrigger: !!o.isTrigger, trigger: o.triggerPx, px: o.limitPx, reduceOnly: o.reduceOnly, parent: parent ? parent.oid : null }); for (const ch of o.children || []) push(ch, o); };
     for (const o of oo || []) push(o, null);
     out.orders = out.orders.filter((o, k, all) => o.parent != null || !all.some((x) => x.oid === o.oid && x.parent != null)).filter((o, k, all) => all.findIndex((x) => x.oid === o.oid) === k);
   }
-  // free spot + perp value counts every dollar once (margin shows as spot hold AND perp value)
-  return finish(out, Number((Number(usdc.total) - Number(usdc.hold) + perp).toFixed(2)), Number((Number(usdc.total) - Number(usdc.hold)).toFixed(2)));
+  // free spot + perp value counts every dollar once (margin shows as spot hold AND perp value).
+  // Free money: a unified account keeps it in spot (perp withdrawable reads 0); a new, standard account keeps it in the perp account.
+  return finish(out, Number((Number(usdc.total) - Number(usdc.hold) + perp).toFixed(2)), Number((Number(usdc.total) - Number(usdc.hold) + (out.perpFree || 0)).toFixed(2)));
 }
 function finish(out, equity, free) {
   out.equity = equity; out.free = free;
@@ -406,7 +408,7 @@ async function main() {
       p = await plan({ ...args, limit: String(roundSig(p.isLong ? theirs - step : theirs + step)) }); p.joinBook = true; p.gdexMark = theirs;
       res = await send();
     }
-    if (res && res.isSuccess === false) die(`rejected: ${JSON.stringify(res)}`);
+    if (res && res.isSuccess === false) die(`rejected: ${JSON.stringify(res)}` + (p.coin.includes(':') && /Insufficient margin/i.test(String(res.error)) ? ' - on a new account, stock and index markets must be switched on once: node setup.js enable' : ''));
     await new Promise((r) => setTimeout(r, 4000));
     const after = await reread(wallet.managed);
     const got = after.positions.find((x) => x.coin === p.coin);
