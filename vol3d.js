@@ -18,8 +18,8 @@ async function hl(body) {
   for (let k = 0; ; k += 1) { // the public API rate-limits bursts: retry a null/429 a few times
     const r = await fetch('https://api.hyperliquid.xyz/info', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
     const j = r && r.ok ? await r.json().catch(() => null) : null;
-    if (j != null || k >= 4) return j;
-    await new Promise((res) => setTimeout(res, 700 * (k + 1)));
+    if (j != null || k >= 6) return j;
+    await new Promise((res) => setTimeout(res, 800 * (k + 1)));
   }
 }
 const argv = process.argv.slice(2);
@@ -85,4 +85,4 @@ async function main() {
   fs.writeFileSync(file, fs.readFileSync(path.join(__dirname, 'vol3d.template.html'), 'utf8').replace('/*DATA*/null', JSON.stringify(data)).replace('/*LOGO*/', fs.readFileSync(path.join(__dirname, 'brand', 'gemach-lion.svg'), 'utf8')));
   console.log(JSON.stringify({ ok: true, file, coin, price, hi, lo, rangePct: +data.rangePct.toFixed(2), walls: data.walls.map((w) => +w.px.toPrecision(5)), air: data.air.map((w) => +w.px.toPrecision(5)) }, null, 1));
 }
-main().catch((e) => { console.error(String(e.stack || e)); process.exit(1); });
+main().catch((e) => { require('./lib.js').bail(e); });

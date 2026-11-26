@@ -100,4 +100,4 @@ async function main() {
   if (stillOpen.length) console.log(C.dim(`\nstill open, not counted: ${stillOpen.map((t) => t.coin).join(', ')}`));
   console.log('');
 }
-main().catch((e) => { console.error(String(e.stack || e)); process.exit(1); });
+main().catch((e) => { require('./lib.js').bail(e); });

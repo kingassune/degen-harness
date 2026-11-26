@@ -1,6 +1,0 @@
-{
-  "name": "degen",
-  "version": "0.1.0",
-  "description": "Terminal trading harness for HyperLiquid perps through GDEX: scanner, sectors, momentum, levels, 3-D volume terrain, tracker, and an order engine with fast stop and target moves.",
-  "author": { "name": "Gemach" }
-}

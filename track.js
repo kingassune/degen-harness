@@ -229,5 +229,5 @@ async function pairCmd() {
   LEGS = 2; const i = argv.indexOf('--pair'); const named = [argv[i + 1], argv[i + 2]].filter((x) => x && !x.startsWith('--')).map(normCoin);
   return backtestCmd(named.length === 2 ? [named] : PAIRS, flag('tf', null) ? [flag('tf')] : ['15m', '1h']);
 }
-if (require.main === module) (argv.includes('--pair') || argv.includes('--pairs') ? pairCmd() : argv.includes('--backtest-all') ? backtestCmd(BASKET, flag('tf', null) ? [flag('tf')] : ['5m', '15m', '1h']) : one()).catch((e) => { console.error(String(e.stack || e)); process.exit(1); });
+if (require.main === module) (argv.includes('--pair') || argv.includes('--pairs') ? pairCmd() : argv.includes('--backtest-all') ? backtestCmd(BASKET, flag('tf', null) ? [flag('tf')] : ['5m', '15m', '1h']) : one()).catch((e) => { require('./lib.js').bail(e); });
 module.exports = { runTrack, backtest, stats, candles };

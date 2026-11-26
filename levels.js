@@ -16,8 +16,8 @@ async function hl(body) {
   for (let k = 0; ; k += 1) { // the public API rate-limits bursts: retry a null/429 a few times
     const r = await fetch('https://api.hyperliquid.xyz/info', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
     const j = r && r.ok ? await r.json().catch(() => null) : null;
-    if (j != null || k >= 4) return j;
-    await new Promise((res) => setTimeout(res, 700 * (k + 1)));
+    if (j != null || k >= 6) return j;
+    await new Promise((res) => setTimeout(res, 800 * (k + 1)));
   }
 }
 const fmt = (v) => (v >= 1000 ? v.toFixed(0) : v >= 10 ? v.toFixed(2) : v >= 0.1 ? v.toFixed(4) : v.toPrecision(4));
@@ -123,4 +123,4 @@ async function main() {
   console.log(C.dim(`\nstop = zone edge + ${fmt(buf)} breathing room (0.3 x the 15m average range). score = hits weighted by timeframe (1d counts most). Bold zone = seen on 4h or 1d.`));
   console.log(C.dim(`Liquidation sits roughly ${(100 / maxLev / 2).toFixed(2)}% away at ${maxLev}x and ${(100 / halfLev - 100 / maxLev / 2).toFixed(2)}% at ${halfLev}x; a stop further than that never triggers.\n`));
 }
-main().catch((e) => { console.error(String(e.stack || e)); process.exit(1); });
+main().catch((e) => { require('./lib.js').bail(e); });

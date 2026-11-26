@@ -133,4 +133,4 @@ async function main() {
     await new Promise((r) => setTimeout(r, every));
   }
 }
-main().catch((e) => { console.error(String(e.stack || e)); process.exit(1); });
+main().catch((e) => { require('./lib.js').bail(e); });

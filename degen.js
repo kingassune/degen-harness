@@ -34,7 +34,7 @@
  * Size: no size flag = 80% of the live account as margin (DEGEN_DEFAULT_MARGIN_PCT). No size caps by default.
  * Optional rails (off unless set): DEGEN_MAX_RISK_USD per trade, DEGEN_MAX_RISK_PCT of equity, DEGEN_DD_FLOOR drawdown brake
  * across open risk, stop must sit inside 70% of the distance to liquidation.
- * Env: GDEX_SKILL_DIR, GCLAW_WALLET (same as gdesk's hl_perp.js). Journal: ./journal.jsonl
+ * Wallet: DEGEN_WALLET, else ~/.degen/wallet.json (made by setup.js). SDK: npm install, or GDEX_SKILL_DIR. Journal: ./journal.jsonl
  */
 'use strict';
 const fs = require('node:fs');
@@ -42,12 +42,11 @@ const os = require('node:os');
 const path = require('node:path');
 
 // Looked for next to this folder unless the environment says otherwise, so the harness is not tied to one machine.
-const HOME = path.join(__dirname, '..');
-const GDEX_DIR = process.env.GDEX_SKILL_DIR || path.join(HOME, 'gdex-skill');
-const WALLET_PATH = process.env.GCLAW_WALLET || path.join(HOME, 'gdex-test-wallet.json');
+const { walletPath, loadSdk } = require('./lib.js');
+const WALLET_PATH = walletPath();
 const JOURNAL = path.join(__dirname, 'journal.jsonl');
-const MAX_RISK_USD = Number(process.env.DEGEN_MAX_RISK_USD || 0)   // 0 = no cap (default since 2026-11-23, the owner's call);
-const MAX_RISK_PCT = Number(process.env.DEGEN_MAX_RISK_PCT || 0)   // 0 = no cap;
+const MAX_RISK_USD = Number(process.env.DEGEN_MAX_RISK_USD || 0);   // 0 = no cap
+const MAX_RISK_PCT = Number(process.env.DEGEN_MAX_RISK_PCT || 0);   // 0 = no cap
 const MIN_NOTIONAL = 11;
 
 const die = (m) => { console.log(JSON.stringify({ ok: false, error: m })); process.exit(1); };
@@ -69,6 +68,7 @@ function parseArgs(argv) {
   return o;
 }
 function loadWallet() {
+  if (!fs.existsSync(WALLET_PATH)) die(`no wallet file at ${WALLET_PATH} - run "node setup.js" to create one (or set DEGEN_WALLET)`);
   const w = JSON.parse(fs.readFileSync(WALLET_PATH, 'utf8'));
   const managed = w.managed?.['Arbitrum (HyperLiquid)']?.address;
   if (!w.control?.address || !w.control?.privateKey || !managed) die('wallet file incomplete');
@@ -79,8 +79,7 @@ function loadWallet() {
 const SESSION = path.join(__dirname, '.session.json');
 async function signed(wallet, fresh = false) {
   if (MOCK) die('DEGEN_MOCK_ACCOUNT is set: this is a test run, live actions are off');
-  const { ethers } = require(path.join(GDEX_DIR, 'node_modules', 'ethers'));
-  const SDK = require(path.join(GDEX_DIR, 'dist'));
+  const { SDK, ethers } = loadSdk();
   const apiKey = process.env.GDEX_API_KEY || SDK.GDEX_API_KEY_PRIMARY;
   const skill = new SDK.GdexSkill({ timeout: 60000, maxRetries: 1 });
   skill.loginWithApiKey(apiKey);
@@ -181,7 +180,7 @@ async function reread(managed) {
 
 async function plan(args) {
   // Stops and targets as PERCENT OF MARGIN (GDEX style): --sl 20 --tp 60. Price levels still work: --stop PX --tp-px PX.
-  const usage = 'need --coin --side long|short --sl PCT --tp PCT (percent of margin) and --risk USD or --margin USD [--lev max|half|N]';
+  const usage = 'need --coin X --side long|short, a stop (--sl PCT of margin, or --stop PRICE) and a target (--tp PCT of margin, or --tp-px PRICE). Optional: --lev max|half|N, --margin USD, --margin-pct N, --risk USD, --limit PRICE';
   for (const k of ['coin', 'side']) if (args[k] == null) die(usage);
   // compounding: --margin-pct 20 puts up 20% of CURRENT equity, --risk-pct 4 risks 4% of it, so size grows and shrinks with the account
   let brake = null;
@@ -235,7 +234,7 @@ async function plan(args) {
   // isolated-style liquidation distance: initial margin 1/lev minus maintenance 1/(2*maxLev)
   const liqDist = 1 / lev - 1 / (2 * m.maxLev);
   if (stopDist > 0.7 * liqDist) die(`stop ${(stopDist * 100).toFixed(2)}% away is too close to liquidation (~${(liqDist * 100).toFixed(2)}%) at ${lev}x — drop leverage or tighten the stop`);
-  if (notional < MIN_NOTIONAL) die(`notional $${notional.toFixed(2)} below HL $${MIN_NOTIONAL} minimum`);
+  if (notional < MIN_NOTIONAL) die(notional === 0 ? 'the account has no money to trade with - run "node setup.js check" to see where it is and how to fund it' : `position of $${notional.toFixed(2)} is below the $${MIN_NOTIONAL} HyperLiquid minimum - use more margin or more leverage`);
   // noise check: a stop closer than one average 15m candle gets hit by ordinary movement, not by being wrong
   const k15 = await hl({ type: 'candleSnapshot', req: { coin: m.name, interval: '15m', startTime: Date.now() - 4 * 3600e3, endTime: Date.now() } }).catch(() => null);
   const avg15 = Array.isArray(k15) && k15.length ? k15.reduce((a, x) => a + (Number(x.h) - Number(x.l)) / Number(x.c), 0) / k15.length : 0;
@@ -268,8 +267,7 @@ async function plan(args) {
 
 // Fallback only: one signed call built by hand, for SDK builds that do not have hlModifyOrder / hlAddPositionTpsl yet.
 async function gdexCall(skill, creds, action, types, valuesAfterNonce, endpoint) {
-  const { ethers } = require(path.join(GDEX_DIR, 'node_modules', 'ethers'));
-  const SDK = require(path.join(GDEX_DIR, 'dist'));
+  const { SDK, ethers } = loadSdk();
   const nonce = SDK.generateGdexNonce().toString();
   const data = ethers.AbiCoder.defaultAbiCoder().encode(types, [nonce, ...valuesAfterNonce]).slice(2);
   const signature = SDK.signHlActionMessage(action, creds.walletAddress, data, creds.sessionPrivateKey);
@@ -455,4 +453,5 @@ async function main() {
   if (['sl', 'tp', 'move', 'entry'].includes(cmd)) return adjust(cmd, args, wallet);
   die('commands: status | plan | fire | flat | orders | cancel | entry | sl | tp | move | peak');
 }
-main().then((o) => { console.log(JSON.stringify(o, null, 1)); process.exit(0); }).catch((e) => die(String(e.stack || e)));
+if (require.main === module) main().then((o) => { console.log(JSON.stringify(o, null, 1)); process.exit(0); }).catch((e) => die(String(e.stack || e)));
+else module.exports = { signed, signedCall, loadWallet, hl };

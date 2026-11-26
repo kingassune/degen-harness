@@ -133,4 +133,4 @@ async function main() {
   for (const p of per) console.log(`${padE(p.coin, 10)} ${pad(p.days.toFixed(0), 5)} | ${pad(p.fade.n, 6)} ${pad(p.fade.n ? p.fade.avgR.toFixed(3) : '-', 7)} | ${pad(p.breakout.n, 6)} ${pad(p.breakout.n ? p.breakout.avgR.toFixed(3) : '-', 7)}`);
   console.log('');
 }
-main().catch((e) => { console.error(String(e.stack || e)); process.exit(1); });
+main().catch((e) => { require('./lib.js').bail(e); });

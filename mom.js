@@ -37,8 +37,8 @@ async function hl(body) {
   for (let k = 0; ; k += 1) { // the public API rate-limits bursts: retry a null/429 a few times
     const r = await fetch('https://api.hyperliquid.xyz/info', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
     const j = r && r.ok ? await r.json().catch(() => null) : null;
-    if (j != null || k >= 4) return j;
-    await new Promise((res) => setTimeout(res, 700 * (k + 1)));
+    if (j != null || k >= 6) return j;
+    await new Promise((res) => setTimeout(res, 800 * (k + 1)));
   }
 }
 async function candles(coin, tf, secs, n) {
@@ -191,4 +191,4 @@ async function hunt() {
   }
   console.log(C.dim(`\nRanked by push x clean x expansion x volume, boosted when 15m and 1h agree. Next: node mom.js <market>\n`));
 }
-(argv.includes('--hunt') ? hunt() : one()).catch((e) => { console.error(String(e.stack || e)); process.exit(1); });
+(argv.includes('--hunt') ? hunt() : one()).catch((e) => { require('./lib.js').bail(e); });

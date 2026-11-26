@@ -44,8 +44,8 @@ async function hl(body) {
   for (let k = 0; ; k += 1) {
     const r = await fetch('https://api.hyperliquid.xyz/info', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
     const j = r && r.ok ? await r.json().catch(() => null) : null;
-    if (j != null || k >= 4) return j;
-    await new Promise((res) => setTimeout(res, 700 * (k + 1)));
+    if (j != null || k >= 6) return j;
+    await new Promise((res) => setTimeout(res, 800 * (k + 1)));
   }
 }
 async function main() {
@@ -97,4 +97,4 @@ async function main() {
   }
   console.log(C.dim(`\nLeaders and laggards need $1M+ of 24h volume. Next: node sectors.js --sector <name>  |  node mom.js <market>\n`));
 }
-main().catch((e) => { console.error(String(e.stack || e)); process.exit(1); });
+main().catch((e) => { require('./lib.js').bail(e); });

@@ -3,13 +3,16 @@
 .equity.json
 config.json
 journal.jsonl
+wallet.json
+*wallet*.json
+.env
 # generated charts and research databases
 out/
 research/**/search.sqlite
 research/**/corpus.jsonl
 node_modules/
-
-# Beads / Dolt files (added by bd init)
+# local issue tracker
+.beads/
 .dolt/
 *.db
 .beads-credential-key

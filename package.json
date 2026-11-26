@@ -1,13 +1,23 @@
 {
   "name": "degen-harness",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "Terminal trading harness for HyperLiquid perps through GDEX",
+  "description": "Trade HyperLiquid perps through GDEX by talking to Claude Code: scanner, sectors, momentum, levels, 3-D volume terrain, tracker, and a fast order engine",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/kingassune/degen-harness.git" },
   "engines": { "node": ">=20" },
   "scripts": {
+    "setup": "node setup.js",
+    "doctor": "node setup.js check",
+    "charts": "npm install --no-save playwright && npx playwright install chromium",
     "action": "node sectors.js && node scan.js && node mom.js --hunt",
     "pos": "node pos.js",
     "stats": "node stats.js",
-    "check": "for f in *.js; do node --check \"$f\" || exit 1; done"
+    "check": "for f in *.js; do node --check \"$f\" || exit 1; done",
+    "test": "npm run check && node test/smoke.js"
+  },
+  "dependencies": {
+    "@gemachdao/gdex-skill": "^5.5.0",
+    "ethers": "^6.13.0"
   }
 }
